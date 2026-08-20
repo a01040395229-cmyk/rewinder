@@ -1605,8 +1605,8 @@ window.alignToSet = (setId) => {
         }
 
         const baseTarget = - targetIdx * ROTATION_STEP;
-        let diff = (baseTarget - cur) % (Math.PI * 2);
-        if (diff > 0.0001) diff -= Math.PI * 2;
+        let diff = baseTarget - cur;
+        diff = ((diff % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
         cylinders[c].targetRotation = cur + diff;
     }
     if(typeof saveState === "function") saveState(); 
@@ -1711,11 +1711,19 @@ function saveState() {
         window.EMBEDDED_DATA.rotations = cylinders.map(c => c ? c.targetRotation : 0);
     }
     try { 
-        localStorage.setItem('fm_imgs', JSON.stringify(CATEGORIES)); 
         localStorage.setItem('fm_sets', JSON.stringify(STYLE_SETS)); 
+    } catch (e) {
+        console.warn("LocalStorage save error for fm_sets:", e);
+    }
+    try { 
         localStorage.setItem('fm_rots', JSON.stringify(cylinders.map(c => c ? c.targetRotation : 0))); 
+    } catch (e) {
+        console.warn("LocalStorage save error for fm_rots:", e);
+    }
+    try { 
+        localStorage.setItem('fm_imgs', JSON.stringify(CATEGORIES)); 
     } catch (e) { 
-        console.warn("LocalStorage quota exceeded, relying on IndexedDB:", e); 
+        console.warn("LocalStorage quota exceeded for fm_imgs, relying on IndexedDB:", e); 
     } 
 }
 

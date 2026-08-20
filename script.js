@@ -522,12 +522,11 @@ async function init() {
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
         const L2 = new THREE.DirectionalLight(0xffffff, 0.8); L2.position.set(10, 20, 10); scene.add(L2);
         
-        await loadEverything();
         // 5개 카테고리별 원통 3D 메시 생성 및 씬에 추가
         for (let i = 0; i < CATEGORIES.length; i++) {
             const cyl = await createCylinderMesh(i); scene.add(cyl.group);
-            await updateCylinderTexture(i);
         }
+        await loadEverything();
     } catch (error) { 
         logDebug('❌ INIT FAIL: ' + error.message); 
     } finally { 
@@ -979,7 +978,6 @@ async function createCylinderMesh(index) {
 
 // WebGL 캔버스 오염(Tainted Canvas) 방지 검증 함수
 function isImageSafeForCanvas(img) {
-    if (window.location.protocol === 'file:') return true;
     try {
         const testCanvas = document.createElement('canvas');
         testCanvas.width = 1; testCanvas.height = 1;
@@ -996,7 +994,6 @@ function isImageSafeForCanvas(img) {
 async function loadCylinderImage(url) {
     if (!url) return null;
     const isDataOrBlob = url.startsWith('data:') || url.startsWith('blob:');
-    const isLocalFile = window.location.protocol === 'file:' || !url.startsWith('http');
     
     const fetchSingle = (srcUrl, useCrossOrigin) => new Promise((resolve) => {
         const img = new Image();
@@ -1014,9 +1011,8 @@ async function loadCylinderImage(url) {
         img.src = srcUrl;
     });
 
-    if (isDataOrBlob || isLocalFile) {
-        let loaded = await fetchSingle(url, false);
-        if (loaded) return loaded;
+    if (isDataOrBlob) {
+        return await fetchSingle(url, false);
     }
 
     // 1차 시도: 일반 CORS 로드
@@ -1035,7 +1031,7 @@ async function loadCylinderImage(url) {
         }
     }
 
-    // 3차 시도: crossOrigin 없이 로드
+    // 3차 시도: crossOrigin 없이 로드 (캔버스 오염을 일으키지 않는 경우만 채택)
     loadedImg = await fetchSingle(url, false);
     if (loadedImg) return loadedImg;
 

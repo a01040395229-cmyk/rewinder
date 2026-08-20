@@ -973,52 +973,17 @@ function isImageSafeForCanvas(img) {
     }
 }
 
-// 안전한 텍스처용 이미지 로더 (CORS / Data URI / 로컬 이미지 호환)
 async function loadCylinderImage(url) {
     if (!url) return null;
-    const isDataOrBlob = url.startsWith('data:') || url.startsWith('blob:');
-    
-    const fetchSingle = (srcUrl, useCrossOrigin) => new Promise((resolve) => {
+    return new Promise((resolve) => {
         const img = new Image();
-        if (useCrossOrigin) {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
             img.crossOrigin = "anonymous";
         }
-        img.onload = () => {
-            if (isImageSafeForCanvas(img)) {
-                resolve(img);
-            } else {
-                resolve(null);
-            }
-        };
+        img.onload = () => resolve(img);
         img.onerror = () => resolve(null);
-        img.src = srcUrl;
+        img.src = url;
     });
-
-    if (isDataOrBlob) {
-        return await fetchSingle(url, false);
-    }
-
-    // 1차 시도: 일반 CORS 로드
-    let loadedImg = await fetchSingle(url, true);
-    if (loadedImg) return loadedImg;
-
-    // 2차 시도: 외부 CORS 프록시 경유 로드 (HTTP/HTTPS 인 경우)
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-        const proxies = [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            `https://corsproxy.io/?${encodeURIComponent(url)}`
-        ];
-        for (const proxy of proxies) {
-            loadedImg = await fetchSingle(proxy, true);
-            if (loadedImg) return loadedImg;
-        }
-    }
-
-    // 3차 시도: crossOrigin 없이 로드 (캔버스 오염을 일으키지 않는 경우만 채택)
-    loadedImg = await fetchSingle(url, false);
-    if (loadedImg) return loadedImg;
-
-    return null;
 }
 
 // 20개 아이템 이미지를 2D Canvas에 베이킹하여 원통 표면 텍스처로 렌더링

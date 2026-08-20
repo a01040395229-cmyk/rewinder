@@ -486,7 +486,7 @@ let CATEGORIES = [
         ]
     }
 ];
-let STYLE_SETS = [{ id: 1, name: 'STYLING 1' }];
+let STYLE_SETS = [{ id: 1, name: '모나미룩' }];
 let editingSetId = null;
 
 // --------------------------------------------------------------------------
@@ -703,7 +703,7 @@ async function loadStateFromIDB() {
 async function loadEverything() {
     let dataToLoad = { rotations: [] };
     
-    // 브라우저 저장소 대신 index.html에 작성된 EMBEDDED_DATA 정적 데이터만 로드
+    // EMBEDDED_DATA가 있을 경우만 참고하고, 없으면 script.js 기본 카테고리와 상대경로 이미지 사용
     if (window.EMBEDDED_DATA) {
         if (window.EMBEDDED_DATA.categories) CATEGORIES = window.EMBEDDED_DATA.categories;
         if (window.EMBEDDED_DATA.sets) STYLE_SETS = window.EMBEDDED_DATA.sets;
@@ -1712,8 +1712,20 @@ window.saveToShareableFile = async () => {
 window.deleteStyleSet = (id) => { if(STYLE_SETS.length <= 1) return; STYLE_SETS = STYLE_SETS.filter(x => x.id !== id); saveState(); createUI(); };
 
 function saveState() { 
-    // 브라우저 저장 기능 비활성화 (정적 EMBEDDED_DATA 기준 작동)
-    return;
+    if (isLocked) return; 
+    saveStateToIDB(); 
+    if (window.EMBEDDED_DATA) {
+        window.EMBEDDED_DATA.categories = CATEGORIES;
+        window.EMBEDDED_DATA.sets = STYLE_SETS;
+        window.EMBEDDED_DATA.rotations = cylinders.map(c => c ? c.targetRotation : 0);
+    }
+    try { 
+        localStorage.setItem('fm_imgs', JSON.stringify(CATEGORIES)); 
+        localStorage.setItem('fm_sets', JSON.stringify(STYLE_SETS)); 
+        localStorage.setItem('fm_rots', JSON.stringify(cylinders.map(c => c ? c.targetRotation : 0))); 
+    } catch (e) { 
+        console.warn("LocalStorage quota exceeded, relying on IndexedDB:", e); 
+    } 
 }
 
 // --------------------------------------------------------------------------

@@ -703,33 +703,11 @@ async function loadStateFromIDB() {
 async function loadEverything() {
     let dataToLoad = { rotations: [] };
     
-    // 1. IndexedDB / localStorage 사용자 최근 수정 저장값 로드
-    const idbData = await loadStateFromIDB();
-    const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
-    const sets = idbData?.sets || localStorage.getItem('fm_sets');
-    const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
-    const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
-
-    let loadedImgs = imgs ? (typeof imgs === 'string' ? JSON.parse(imgs) : imgs) : null;
-    let loadedSets = sets ? (typeof sets === 'string' ? JSON.parse(sets) : sets) : null;
-
-    // 2. 사용자 수정본이 있으면 그것을 적용하고, 없으면 HTML에 포함된 EMBEDDED_DATA(초기 기본값) 적용
-    if (loadedImgs && Array.isArray(loadedImgs) && loadedImgs.length > 0) {
-        CATEGORIES = loadedImgs;
-    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.categories) {
-        CATEGORIES = window.EMBEDDED_DATA.categories;
-    }
-
-    if (loadedSets && Array.isArray(loadedSets) && loadedSets.length > 0) {
-        STYLE_SETS = loadedSets;
-    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.sets) {
-        STYLE_SETS = window.EMBEDDED_DATA.sets;
-    }
-
-    if (rots && Array.isArray(rots)) {
-        dataToLoad.rotations = rots;
-    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.rotations) {
-        dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
+    // 브라우저 저장소 대신 index.html에 작성된 EMBEDDED_DATA 정적 데이터만 로드
+    if (window.EMBEDDED_DATA) {
+        if (window.EMBEDDED_DATA.categories) CATEGORIES = window.EMBEDDED_DATA.categories;
+        if (window.EMBEDDED_DATA.sets) STYLE_SETS = window.EMBEDDED_DATA.sets;
+        if (window.EMBEDDED_DATA.rotations) dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
     }
     
     // 원통 텍스처 및 각도 데이터 적용
@@ -1734,20 +1712,8 @@ window.saveToShareableFile = async () => {
 window.deleteStyleSet = (id) => { if(STYLE_SETS.length <= 1) return; STYLE_SETS = STYLE_SETS.filter(x => x.id !== id); saveState(); createUI(); };
 
 function saveState() { 
-    if (isLocked) return; 
-    saveStateToIDB(); 
-    if (window.EMBEDDED_DATA) {
-        window.EMBEDDED_DATA.categories = CATEGORIES;
-        window.EMBEDDED_DATA.sets = STYLE_SETS;
-        window.EMBEDDED_DATA.rotations = cylinders.map(c => c ? c.targetRotation : 0);
-    }
-    try { 
-        localStorage.setItem('fm_imgs', JSON.stringify(CATEGORIES)); 
-        localStorage.setItem('fm_sets', JSON.stringify(STYLE_SETS)); 
-        localStorage.setItem('fm_rots', JSON.stringify(cylinders.map(c => c ? c.targetRotation : 0))); 
-    } catch (e) { 
-        console.warn("LocalStorage quota exceeded, relying on IndexedDB:", e); 
-    } 
+    // 브라우저 저장 기능 비활성화 (정적 EMBEDDED_DATA 기준 작동)
+    return;
 }
 
 // --------------------------------------------------------------------------

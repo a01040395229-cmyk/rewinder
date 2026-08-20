@@ -514,9 +514,11 @@ async function init() {
         camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000); 
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const canvasContainer = document.getElementById('canvas-container');
+        if (canvasContainer) {
+            canvasContainer.innerHTML = '';
+            canvasContainer.appendChild(renderer.domElement);
+        }
         
         // 조명 설정 (AmbientLight + DirectionalLight)
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -703,28 +705,33 @@ async function loadStateFromIDB() {
 async function loadEverything() {
     let dataToLoad = { rotations: [] };
     
-    // 우선순위 1: window.EMBEDDED_DATA (HTML 파일 내장 최신 설정)
-    if (window.EMBEDDED_DATA) {
-        if (window.EMBEDDED_DATA.categories) CATEGORIES = window.EMBEDDED_DATA.categories;
-        if (window.EMBEDDED_DATA.sets) STYLE_SETS = window.EMBEDDED_DATA.sets;
-        if (window.EMBEDDED_DATA.rotations) dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
-    } else {
-        // 우선순위 2: EMBEDDED_DATA가 없을 때만 브라우저 캐시 로드
-        const idbData = await loadStateFromIDB();
-        const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
-        const sets = idbData?.sets || localStorage.getItem('fm_sets');
-        const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
-        const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
+    // 1. IndexedDB / localStorage 사용자 최근 수정 저장값 로드
+    const idbData = await loadStateFromIDB();
+    const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
+    const sets = idbData?.sets || localStorage.getItem('fm_sets');
+    const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
+    const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
 
-        if (imgs) {
-            let loaded = typeof imgs === 'string' ? JSON.parse(imgs) : imgs;
-            if (Array.isArray(loaded) && loaded.length > 0) CATEGORIES = loaded;
-        }
-        if (sets) {
-            let loadedSets = typeof sets === 'string' ? JSON.parse(sets) : sets;
-            if (Array.isArray(loadedSets) && loadedSets.length > 0) STYLE_SETS = loadedSets;
-        }
-        if (rots && Array.isArray(rots)) dataToLoad.rotations = rots;
+    let loadedImgs = imgs ? (typeof imgs === 'string' ? JSON.parse(imgs) : imgs) : null;
+    let loadedSets = sets ? (typeof sets === 'string' ? JSON.parse(sets) : sets) : null;
+
+    // 2. 사용자 수정본이 있으면 그것을 적용하고, 없으면 HTML에 포함된 EMBEDDED_DATA(초기 기본값) 적용
+    if (loadedImgs && Array.isArray(loadedImgs) && loadedImgs.length > 0) {
+        CATEGORIES = loadedImgs;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.categories) {
+        CATEGORIES = window.EMBEDDED_DATA.categories;
+    }
+
+    if (loadedSets && Array.isArray(loadedSets) && loadedSets.length > 0) {
+        STYLE_SETS = loadedSets;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.sets) {
+        STYLE_SETS = window.EMBEDDED_DATA.sets;
+    }
+
+    if (rots && Array.isArray(rots)) {
+        dataToLoad.rotations = rots;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.rotations) {
+        dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
     }
     
     // 원통 텍스처 및 각도 데이터 적용
@@ -1658,7 +1665,7 @@ window.applyStyleSet = (id, idx) => {
 window.addStyleSet = () => { const id = STYLE_SETS.length > 0 ? Math.max(...STYLE_SETS.map(s => s.id)) + 1 : 1; STYLE_SETS.push({ id, name: "NAME" }); saveState(); createUI(); };
 window.toggleSetForItem = (catId, idx, setId) => { const item = CATEGORIES[catId].items[idx]; if (!item.setIds) item.setIds = []; if (item.setIds.includes(setId)) { item.setIds = item.setIds.filter(id => id !== setId); } else { CATEGORIES[catId].items.forEach((it, i) => { if (i !== idx && it.setIds) it.setIds = it.setIds.filter(id => id !== setId); }); item.setIds.push(setId); } saveState(); createUI(); };
 window.renameStyleSet = (id, n) => { const s = STYLE_SETS.find(x => x.id === id); if(s) { s.name = n.toUpperCase(); saveState(); createUI(); } };
-window.saveCurrentToSet = (id) => { cylinders.forEach((cyl, catIdx) => { const raw = Math.round(-cyl.targetRotation / ROTATION_STEP); const fIdx = ((raw % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT; CATEGORIES[catIdx].items.forEach(it => { if (it && it.setIds) it.setIds = it.setIds.filter(setId => setId !== id); }); const it = CATEGORIES[catIdx].items[fIdx]; if(it) { if(!it.setIds) it.setIds = []; it.setIds.push(id); } }); editingSetId = id; saveState(); createUI(); };
+window.saveCurrentToSet = (id) => { cylinders.forEach((cyl, catIdx) => { const raw = Math.round(-cyl.targetRotation / ROTATION_STEP); const fIdx = ((raw % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT; CATEGORIES[catIdx].items.forEach(it => { if (it && it.setIds) it.setIds = it.setIds.filter(setId => setId !== id); }); const it = CATEGORIES[catIdx].items[fIdx]; if(it) { if(!it.setIds) it.setIds = []; it.setIds.push(id); } }); editingSetId = id; saveState(); createUI(); showMessage("현재 착장이 스타일 세트에 저장되었습니다! ✨"); };
 
 // 전 데이터 및 이미지를 단일 HTML 파일로 번들링하여 다운로드
 window.saveToShareableFile = async () => {
@@ -1705,12 +1712,33 @@ window.saveToShareableFile = async () => {
         const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
         const dataScript = `\n<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
         
-        html = html.replace(/<script>window\.EMBEDDED_DATA = .*?<\/script>/s, ""); 
+        // 1. 기존 내장 데이터 스크립트 제거
+        html = html.replace(/<script>window\.EMBEDDED_DATA[\s\S]*?<\/script>/gi, ""); 
         
-        if (html.includes("</body>")) {
-            html = html.replace("</body>", dataScript + "</body>");
-        } else {
-            html += dataScript;
+        // 2. style.css 및 script.js 내용 번들링 (독립 싱글 파일화)
+        try {
+            const styleText = await fetch('style.css').then(r => r.ok ? r.text() : null).catch(() => null);
+            const scriptText = await fetch('script.js').then(r => r.ok ? r.text() : null).catch(() => null);
+
+            if (styleText) {
+                html = html.replace(/<link[^>]*href=["']style\.css["'][^>]*>/i, `<style>\n${styleText}\n</style>`);
+            }
+            if (scriptText) {
+                html = html.replace(/<script[^>]*src=["']script\.js["'][^>]*><\/script>/i, `${dataScript}\n<script>\n${scriptText}\n</script>`);
+            } else if (html.includes('<script src="script.js">')) {
+                html = html.replace('<script src="script.js">', dataScript + '<script src="script.js">');
+            } else if (html.includes("</body>")) {
+                html = html.replace("</body>", dataScript + "</body>");
+            } else {
+                html += dataScript;
+            }
+        } catch (e) {
+            console.warn("Script/Style bundle fallback:", e);
+            if (html.includes('<script src="script.js">')) {
+                html = html.replace('<script src="script.js">', dataScript + '<script src="script.js">');
+            } else if (html.includes("</body>")) {
+                html = html.replace("</body>", dataScript + "</body>");
+            }
         }
         
         const blob = new Blob([html], { type: 'text/html' }); 

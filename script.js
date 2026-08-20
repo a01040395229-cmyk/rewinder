@@ -3,13 +3,13 @@
 // ==========================================================================
 
 // 기존 브라우저 캐시(잘못된 이미지 경로 및 스타일 세트) 1회 초기화
-if (!localStorage.getItem('fm_reset_cors_fix_v2')) {
+if (!localStorage.getItem('fm_reset_v5')) {
     localStorage.clear();
     if (window.indexedDB) {
         indexedDB.deleteDatabase('FashionMixerDB');
     }
-    localStorage.setItem('fm_reset_cors_fix_v2', 'true');
-    console.log('Previous cached data cleared for CORS update.');
+    localStorage.setItem('fm_reset_v5', 'true');
+    console.log('Previous cached data cleared for v5 update.');
 }
 
 // --------------------------------------------------------------------------
@@ -703,34 +703,34 @@ async function loadStateFromIDB() {
 async function loadEverything() {
     let dataToLoad = { rotations: [] };
     
-    // 1. EMBEDDED_DATA(HTML 내장 데이터) 우선 적용
-    if (window.EMBEDDED_DATA) {
-        if (window.EMBEDDED_DATA.categories) CATEGORIES = window.EMBEDDED_DATA.categories;
-        if (window.EMBEDDED_DATA.sets) STYLE_SETS = window.EMBEDDED_DATA.sets;
-        if (window.EMBEDDED_DATA.rotations) dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
-    }
-
-    // 2. IndexedDB / localStorage 최신 변경 저장값 로드
+    // 1. IndexedDB / localStorage 최신 변경 저장값 확인
     const idbData = await loadStateFromIDB();
     const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
     const sets = idbData?.sets || localStorage.getItem('fm_sets');
     const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
     const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
 
-    if (imgs) {
-        let loaded = typeof imgs === 'string' ? JSON.parse(imgs) : imgs;
-        if (Array.isArray(loaded) && loaded.length > 0) {
-            CATEGORIES = loaded;
-        }
+    let loadedImgs = imgs ? (typeof imgs === 'string' ? JSON.parse(imgs) : imgs) : null;
+    let loadedSets = sets ? (typeof sets === 'string' ? JSON.parse(sets) : sets) : null;
+
+    // 우선순위: 1) 사용자가 직접 수정한 localStorage/IndexedDB 최신 데이터
+    //           2) HTML에 내장된 EMBEDDED_DATA (기본값)
+    if (loadedImgs && Array.isArray(loadedImgs) && loadedImgs.length > 0) {
+        CATEGORIES = loadedImgs;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.categories) {
+        CATEGORIES = window.EMBEDDED_DATA.categories;
     }
-    if (sets) {
-        let loadedSets = typeof sets === 'string' ? JSON.parse(sets) : sets;
-        if (Array.isArray(loadedSets) && loadedSets.length > 0) {
-            STYLE_SETS = loadedSets;
-        }
+
+    if (loadedSets && Array.isArray(loadedSets) && loadedSets.length > 0) {
+        STYLE_SETS = loadedSets;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.sets) {
+        STYLE_SETS = window.EMBEDDED_DATA.sets;
     }
+
     if (rots && Array.isArray(rots)) {
         dataToLoad.rotations = rots;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.rotations) {
+        dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
     }
     
     // 원통 텍스처 및 각도 데이터 적용

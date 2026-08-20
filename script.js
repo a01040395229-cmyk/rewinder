@@ -1064,8 +1064,9 @@ async function updateCylinderTexture(index) {
     if (categoryItems.length > 0) {
         await Promise.all(Array.from({ length: ITEM_COUNT }).map((_, i) => new Promise(async (res) => {
             const item = categoryItems[i % categoryItems.length];
-            if (!item || !item.url) return res();
-            const img = await loadCylinderImage(item.url);
+            const itemUrl = item ? (item.url || item.image || "") : "";
+            if (!item || !itemUrl) return res();
+            const img = await loadCylinderImage(itemUrl);
             if (img) {
                 const scale = Math.max(sW / img.width, sH / img.height);
                 const dW = img.width * scale, dH = img.height * scale;
@@ -1538,7 +1539,7 @@ function createUI() {
                      ondragleave="handleDragLeave(event)"
                      ondragend="handleDragEnd(event)"
                      ondrop="handleDrop(event, ${cat.id}, ${i})">
-                    <div class="thumb" onclick="showInfoPopup(${cat.id}, ${i})"><img src="${item.url}"></div>
+                    <div class="thumb" onclick="showInfoPopup(${cat.id}, ${i})"><img src="${item.url || item.image || ''}"></div>
                     <div class="delete-btn" onclick="deleteImage(${cat.id}, ${i})">×</div>
                     <div class="order-btn-group">
                         <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, -1)" title="왼쪽으로 이동" ${i === 0 ? 'disabled style="opacity:0.3;cursor:default;"' : ''}>◀</button>
@@ -1663,8 +1664,9 @@ window.saveToShareableFile = async () => {
 
         const bundledCategories = await Promise.all(CATEGORIES.map(async (cat) => {
             const bundledItems = await Promise.all(cat.items.map(async (item) => {
-                const dataUrl = await imageUrlToDataURL(item.url);
-                return { ...item, url: dataUrl };
+                const itemUrl = item ? (item.url || item.image || "") : "";
+                const dataUrl = await imageUrlToDataURL(itemUrl);
+                return { ...item, url: dataUrl, image: dataUrl };
             }));
             return { ...cat, items: bundledItems };
         }));
@@ -1676,12 +1678,21 @@ window.saveToShareableFile = async () => {
         };
 
         let html = document.documentElement.outerHTML; 
+        
+        // 1. 캔버스 중복 생성을 막기 위해 canvas-container 초기화
+        html = html.replace(/<div id="canvas-container">.*?<\/div>/s, '<div id="canvas-container"></div>');
+
+        // 2. 기존 EMBEDDED_DATA 스크립트 제거
+        html = html.replace(/<script>window\.EMBEDDED_DATA = .*?<\/script>/gs, ""); 
+
+        // 3. 새 EMBEDDED_DATA 생성
         const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
-        const dataScript = `\n<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
+        const dataScript = `<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
         
-        html = html.replace(/<script>window\.EMBEDDED_DATA = .*?<\/script>/s, ""); 
-        
-        if (html.includes("</body>")) {
+        // 4. script.js 실행 "전"에 EMBEDDED_DATA가 준비되도록 script.js 바로 앞에 위치하도록 삽입
+        if (html.includes('<script src="script.js"></script>')) {
+            html = html.replace('<script src="script.js"></script>', dataScript + '<script src="script.js"></script>');
+        } else if (html.includes("</body>")) {
             html = html.replace("</body>", dataScript + "</body>");
         } else {
             html += dataScript;
@@ -1733,7 +1744,7 @@ function saveState() {
 window.showInfoPopup = (catId, idx) => { 
     const it = CATEGORIES[catId].items[idx]; 
     if (!it) return; 
-    document.getElementById('info-img').src = it.url; 
+    document.getElementById('info-img').src = it.url || it.image || ""; 
     document.getElementById('info-category').innerText = CATEGORIES[catId].name; 
     document.getElementById('info-title').innerText = it.title || "ITEM"; 
     document.getElementById('info-desc').innerText = it.desc || "상세 정보 없음"; 

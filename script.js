@@ -3,13 +3,13 @@
 // ==========================================================================
 
 // 기존 브라우저 캐시(잘못된 이미지 경로 및 스타일 세트) 1회 초기화
-if (!localStorage.getItem('fm_reset_v7')) {
+if (!localStorage.getItem('fm_reset_v6')) {
     localStorage.clear();
     if (window.indexedDB) {
         indexedDB.deleteDatabase('FashionMixerDB');
     }
-    localStorage.setItem('fm_reset_v7', 'true');
-    console.log('Previous cached data cleared for v7 update.');
+    localStorage.setItem('fm_reset_v6', 'true');
+    console.log('Previous cached data cleared for v6 update.');
 }
 
 // --------------------------------------------------------------------------
@@ -486,7 +486,7 @@ let CATEGORIES = [
         ]
     }
 ];
-let STYLE_SETS = [{ id: 1, name: '모나미룩' }];
+let STYLE_SETS = [{ id: 1, name: 'STYLING 1' }];
 let editingSetId = null;
 
 // --------------------------------------------------------------------------
@@ -703,11 +703,33 @@ async function loadStateFromIDB() {
 async function loadEverything() {
     let dataToLoad = { rotations: [] };
     
-    // EMBEDDED_DATA가 있을 경우만 참고하고, 없으면 script.js 기본 카테고리와 상대경로 이미지 사용
-    if (window.EMBEDDED_DATA) {
-        if (window.EMBEDDED_DATA.categories) CATEGORIES = window.EMBEDDED_DATA.categories;
-        if (window.EMBEDDED_DATA.sets) STYLE_SETS = window.EMBEDDED_DATA.sets;
-        if (window.EMBEDDED_DATA.rotations) dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
+    // 1. IndexedDB / localStorage 사용자 최근 수정 저장값 로드
+    const idbData = await loadStateFromIDB();
+    const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
+    const sets = idbData?.sets || localStorage.getItem('fm_sets');
+    const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
+    const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
+
+    let loadedImgs = imgs ? (typeof imgs === 'string' ? JSON.parse(imgs) : imgs) : null;
+    let loadedSets = sets ? (typeof sets === 'string' ? JSON.parse(sets) : sets) : null;
+
+    // 2. 사용자 수정본이 있으면 그것을 적용하고, 없으면 HTML에 포함된 EMBEDDED_DATA(초기 기본값) 적용
+    if (loadedImgs && Array.isArray(loadedImgs) && loadedImgs.length > 0) {
+        CATEGORIES = loadedImgs;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.categories) {
+        CATEGORIES = window.EMBEDDED_DATA.categories;
+    }
+
+    if (loadedSets && Array.isArray(loadedSets) && loadedSets.length > 0) {
+        STYLE_SETS = loadedSets;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.sets) {
+        STYLE_SETS = window.EMBEDDED_DATA.sets;
+    }
+
+    if (rots && Array.isArray(rots)) {
+        dataToLoad.rotations = rots;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.rotations) {
+        dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
     }
     
     // 원통 텍스처 및 각도 데이터 적용
@@ -973,17 +995,52 @@ function isImageSafeForCanvas(img) {
     }
 }
 
+// 안전한 텍스처용 이미지 로더 (CORS / Data URI / 로컬 이미지 호환)
 async function loadCylinderImage(url) {
     if (!url) return null;
-    return new Promise((resolve) => {
+    const isDataOrBlob = url.startsWith('data:') || url.startsWith('blob:');
+    
+    const fetchSingle = (srcUrl, useCrossOrigin) => new Promise((resolve) => {
         const img = new Image();
-        if (url.startsWith('http://') || url.startsWith('https://')) {
+        if (useCrossOrigin) {
             img.crossOrigin = "anonymous";
         }
-        img.onload = () => resolve(img);
+        img.onload = () => {
+            if (isImageSafeForCanvas(img)) {
+                resolve(img);
+            } else {
+                resolve(null);
+            }
+        };
         img.onerror = () => resolve(null);
-        img.src = url;
+        img.src = srcUrl;
     });
+
+    if (isDataOrBlob) {
+        return await fetchSingle(url, false);
+    }
+
+    // 1차 시도: 일반 CORS 로드
+    let loadedImg = await fetchSingle(url, true);
+    if (loadedImg) return loadedImg;
+
+    // 2차 시도: 외부 CORS 프록시 경유 로드 (HTTP/HTTPS 인 경우)
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        const proxies = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            `https://corsproxy.io/?${encodeURIComponent(url)}`
+        ];
+        for (const proxy of proxies) {
+            loadedImg = await fetchSingle(proxy, true);
+            if (loadedImg) return loadedImg;
+        }
+    }
+
+    // 3차 시도: crossOrigin 없이 로드 (캔버스 오염을 일으키지 않는 경우만 채택)
+    loadedImg = await fetchSingle(url, false);
+    if (loadedImg) return loadedImg;
+
+    return null;
 }
 
 // 20개 아이템 이미지를 2D Canvas에 베이킹하여 원통 표면 텍스처로 렌더링
@@ -1174,57 +1231,26 @@ window.updateTopCarousel = () => {
         return;
     }
 
-    // 5배 복제하여 끊김없는 무한 루프 구현
-    const repeatedSets = [...STYLE_SETS, ...STYLE_SETS, ...STYLE_SETS, ...STYLE_SETS, ...STYLE_SETS];
-    list.innerHTML = repeatedSets.map((s, idx) => `
-        <div class="side-style-item ${(editingSetId === s.id && Math.floor(idx / STYLE_SETS.length) === 2) ? 'active' : ''}" 
+    list.innerHTML = STYLE_SETS.map((s, idx) => `
+        <div class="side-style-item ${editingSetId === s.id || (!editingSetId && idx === 0) ? 'active' : ''}" 
              data-id="${s.id}" data-idx="${idx}">
             ${s.name}
         </div>`).join(''); 
     
     setTimeout(() => {
-        const items = container.querySelectorAll('.side-style-item');
-        if (items.length >= STYLE_SETS.length * 5) {
-            const setBlockHeight = items[STYLE_SETS.length].offsetTop - items[0].offsetTop;
-            if (container.scrollTop === 0) {
-                container.scrollTop = setBlockHeight * 2;
-            }
-        }
         updateActiveSideStyle();
     }, 0);
 
-    container.removeEventListener('scroll', handleSideWheelScroll);
-    container.addEventListener('scroll', handleSideWheelScroll);
     initSideWheelDrag();
 };
 
 window.scrollToSetIndex = (idx) => {
     const container = document.getElementById('side-style-container');
     const items = container ? container.querySelectorAll('.side-style-item') : null;
-    if (items && items[idx + STYLE_SETS.length * 2]) {
-        items[idx + STYLE_SETS.length * 2].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (items && items[idx]) {
+        items[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 };
-
-function handleSideWheelScroll() {
-    const container = document.getElementById('side-style-container');
-    if (!container || !STYLE_SETS || STYLE_SETS.length === 0) return;
-    
-    const items = container.querySelectorAll('.side-style-item');
-    if (items.length < STYLE_SETS.length * 5) return;
-    
-    const singleBlockHeight = items[STYLE_SETS.length].offsetTop - items[0].offsetTop;
-    if (singleBlockHeight <= 0) return;
-
-    const scrollPos = container.scrollTop;
-    
-    if (scrollPos < singleBlockHeight * 0.5) {
-        container.scrollTop += singleBlockHeight * 2;
-    } else if (scrollPos > singleBlockHeight * 3.5) {
-        container.scrollTop -= singleBlockHeight * 2;
-    }
-    updateActiveSideStyle();
-}
 
 let isSideWheelDragging = false;
 let sideWheelStartY = 0;

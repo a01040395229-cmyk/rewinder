@@ -3,13 +3,13 @@
 // ==========================================================================
 
 // 기존 브라우저 캐시(잘못된 이미지 경로 및 스타일 세트) 1회 초기화
-if (!localStorage.getItem('fm_reset_v6')) {
+if (!localStorage.getItem('fm_reset_v7')) {
     localStorage.clear();
     if (window.indexedDB) {
         indexedDB.deleteDatabase('FashionMixerDB');
     }
-    localStorage.setItem('fm_reset_v6', 'true');
-    console.log('Previous cached data cleared for v6 update.');
+    localStorage.setItem('fm_reset_v7', 'true');
+    console.log('Previous cached data cleared for v7 update.');
 }
 
 // --------------------------------------------------------------------------
@@ -707,28 +707,33 @@ async function loadStateFromIDB() {
 async function loadEverything() {
     let dataToLoad = { rotations: [] };
     
-    // 1. EMBEDDED_DATA가 있으면 (GitHub 공유 링크 / 내보낸 HTML) 무조건 이를 1순위로 적용
-    if (window.EMBEDDED_DATA) {
-        if (window.EMBEDDED_DATA.categories) CATEGORIES = window.EMBEDDED_DATA.categories;
-        if (window.EMBEDDED_DATA.sets) STYLE_SETS = window.EMBEDDED_DATA.sets;
-        if (window.EMBEDDED_DATA.rotations) dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
-    } else {
-        // 2. EMBEDDED_DATA가 없는 순수 환경일 때만 브라우저 캐시(LocalStorage/IndexedDB) 로드
-        const idbData = await loadStateFromIDB();
-        const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
-        const sets = idbData?.sets || localStorage.getItem('fm_sets');
-        const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
-        const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
+    // 1. IndexedDB / localStorage 사용자 최근 수정 저장값 로드
+    const idbData = await loadStateFromIDB();
+    const imgs = idbData?.imgs || localStorage.getItem('fm_imgs');
+    const sets = idbData?.sets || localStorage.getItem('fm_sets');
+    const rotsStr = idbData?.rots || localStorage.getItem('fm_rots');
+    const rots = rotsStr ? (typeof rotsStr === 'string' ? JSON.parse(rotsStr) : rotsStr) : null;
 
-        if (imgs) {
-            let loaded = typeof imgs === 'string' ? JSON.parse(imgs) : imgs;
-            if (Array.isArray(loaded) && loaded.length > 0) CATEGORIES = loaded;
-        }
-        if (sets) {
-            let loadedSets = typeof sets === 'string' ? JSON.parse(sets) : sets;
-            if (Array.isArray(loadedSets) && loadedSets.length > 0) STYLE_SETS = loadedSets;
-        }
-        if (rots && Array.isArray(rots)) dataToLoad.rotations = rots;
+    let loadedImgs = imgs ? (typeof imgs === 'string' ? JSON.parse(imgs) : imgs) : null;
+    let loadedSets = sets ? (typeof sets === 'string' ? JSON.parse(sets) : sets) : null;
+
+    // 2. 사용자 수정본이 있으면 그것을 적용하고, 없으면 HTML에 포함된 EMBEDDED_DATA(초기 기본값) 적용
+    if (loadedImgs && Array.isArray(loadedImgs) && loadedImgs.length > 0) {
+        CATEGORIES = loadedImgs;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.categories) {
+        CATEGORIES = window.EMBEDDED_DATA.categories;
+    }
+
+    if (loadedSets && Array.isArray(loadedSets) && loadedSets.length > 0) {
+        STYLE_SETS = loadedSets;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.sets) {
+        STYLE_SETS = window.EMBEDDED_DATA.sets;
+    }
+
+    if (rots && Array.isArray(rots)) {
+        dataToLoad.rotations = rots;
+    } else if (window.EMBEDDED_DATA && window.EMBEDDED_DATA.rotations) {
+        dataToLoad.rotations = window.EMBEDDED_DATA.rotations;
     }
     
     // 원통 텍스처 및 각도 데이터 적용

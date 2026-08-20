@@ -1231,7 +1231,8 @@ window.updateTopCarousel = () => {
 
     list.innerHTML = STYLE_SETS.map((s, idx) => `
         <div class="side-style-item ${editingSetId === s.id || (!editingSetId && idx === 0) ? 'active' : ''}" 
-             data-id="${s.id}" data-idx="${idx}">
+             data-id="${s.id}" data-idx="${idx}"
+             onclick="window.applyStyleSet(${s.id}, ${idx})">
             ${s.name}
         </div>`).join(''); 
     
@@ -1283,7 +1284,7 @@ function initSideWheelDrag() {
     window.addEventListener('pointermove', (e) => {
         if (!isSideWheelDragging) return;
         const deltaY = e.clientY - sideWheelStartY;
-        if (Math.abs(deltaY) > 5) {
+        if (Math.abs(deltaY) > 15) {
             isSideWheelDragMoved = true;
         }
         container.scrollTop = sideWheelStartScrollTop - deltaY;
@@ -1589,12 +1590,14 @@ window.alignToSet = (setId) => {
     if (!CATEGORIES || !cylinders || cylinders.length === 0) return;
     
     lastInteractionTime = Date.now(); 
-    pauseAutoDuration = 5000; 
+    pauseAutoDuration = 10000; 
+
+    const numSetId = Number(setId);
 
     for (let c = 0; c < cylinders.length; c++) {
         if (!CATEGORIES[c] || !CATEGORIES[c].items) continue;
 
-        const idx = CATEGORIES[c].items.findIndex(item => item && (item.setIds && item.setIds.includes(setId)));
+        const idx = CATEGORIES[c].items.findIndex(item => item && item.setIds && item.setIds.map(Number).includes(numSetId));
         const cur = cylinders[c].targetRotation !== undefined ? cylinders[c].targetRotation : (cylinders[c].currentAngle || 0);
         
         let targetIdx = idx;
@@ -1609,7 +1612,7 @@ window.alignToSet = (setId) => {
     }
     if(typeof saveState === "function") saveState(); 
     document.querySelectorAll('.side-style-item').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-id') == setId);
+        btn.classList.toggle('active', Number(btn.getAttribute('data-id')) === numSetId);
     });
 };
 

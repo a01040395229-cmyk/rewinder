@@ -1682,14 +1682,28 @@ window.saveToShareableFile = async () => {
         // 1. 캔버스 중복 생성을 막기 위해 canvas-container 초기화
         html = html.replace(/<div id="canvas-container">.*?<\/div>/s, '<div id="canvas-container"></div>');
 
-        // 2. 기존 EMBEDDED_DATA 스크립트 제거
+        // 2. 내보내기 시 번들링 메시지 박스 잔상 제거 및 초기화
+        html = html.replace(/<div id="message-box".*?<\/div>/s, '<div id="message-box"></div>');
+
+        // 3. 갤러리 관리자 모달(management-panel) 및 정보 팝업이 닫힌 상태(display:none)로 시작하도록 복원
+        html = html.replace(/id="management-panel"[^>]*style="[^"]*"/g, 'id="management-panel" style="display: none;"');
+        if (!html.includes('id="management-panel" style=')) {
+            html = html.replace('id="management-panel"', 'id="management-panel" style="display: none;"');
+        }
+        html = html.replace(/id="info-popup"[^>]*style="[^"]*"/g, 'id="info-popup" style="display: none;"');
+
+        // 4. 스플래시 로딩 화면(loading-screen) 및 가이드 모달(instruction-overlay)이 처음 접속할 때와 동일하게 뜨도록 복원
+        html = html.replace(/id="loading-screen"[^>]*style="[^"]*"/g, 'id="loading-screen"');
+        html = html.replace(/id="instruction-overlay"[^>]*style="[^"]*"/g, 'id="instruction-overlay"');
+
+        // 5. 기존 EMBEDDED_DATA 스크립트 제거
         html = html.replace(/<script>window\.EMBEDDED_DATA = .*?<\/script>/gs, ""); 
 
-        // 3. 새 EMBEDDED_DATA 생성
+        // 6. 새 EMBEDDED_DATA 생성
         const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
         const dataScript = `<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
         
-        // 4. script.js 실행 "전"에 EMBEDDED_DATA가 준비되도록 script.js 바로 앞에 위치하도록 삽입
+        // 7. script.js 실행 "전"에 EMBEDDED_DATA가 준비되도록 script.js 바로 앞에 위치하도록 삽입
         if (html.includes('<script src="script.js"></script>')) {
             html = html.replace('<script src="script.js"></script>', dataScript + '<script src="script.js"></script>');
         } else if (html.includes("</body>")) {

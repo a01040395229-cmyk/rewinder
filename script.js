@@ -1686,6 +1686,19 @@ window.saveToShareableFile = async () => {
 
         // 3. 기존 EMBEDDED_DATA 스크립트 제거
         html = html.replace(/<script>\s*window\.EMBEDDED_DATA\s*=\s*[\s\S]*?<\/script>/gi, ""); 
+
+        // 4. 스플래쉬(로더) 화면 복원 (시작 시 스플래쉬 로딩 화면이 정상 출력되도록)
+        html = html.replace(/<div id="loading-screen"[\s\S]*?>/, '<div id="loading-screen">');
+
+        // 5. 전시 안내(Guide) 오버레이 복원
+        html = html.replace(/<div id="instruction-overlay"[\s\S]*?>/, '<div id="instruction-overlay">');
+
+        // 6. GALLERY 관리자 패널(management-panel) 닫힌 상태로 복원
+        html = html.replace(/<div id="management-panel"[\s\S]*?>/, '<div id="management-panel" class="" style="display: none;">');
+
+        // 7. 토스트 메세지 팝업박스 및 정보 팝업 초기화 (내보내기 토스트 팝업 텍스트 제거)
+        html = html.replace(/<div id="message-box"[\s\S]*?<\/div>/, '<div id="message-box"></div>');
+        html = html.replace(/<div id="info-popup"[\s\S]*?>/, '<div id="info-popup" style="display: none;">');
         
         const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
         const dataScript = `\n<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;

@@ -514,11 +514,9 @@ async function init() {
         camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000); 
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
-        const canvasContainer = document.getElementById('canvas-container');
-        if (canvasContainer) {
-            canvasContainer.innerHTML = '';
-            canvasContainer.appendChild(renderer.domElement);
-        }
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
         
         // 조명 설정 (AmbientLight + DirectionalLight)
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -1712,33 +1710,12 @@ window.saveToShareableFile = async () => {
         const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
         const dataScript = `\n<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
         
-        // 1. 기존 내장 데이터 스크립트 제거
-        html = html.replace(/<script>window\.EMBEDDED_DATA[\s\S]*?<\/script>/gi, ""); 
+        html = html.replace(/<script>window\.EMBEDDED_DATA = .*?<\/script>/s, ""); 
         
-        // 2. style.css 및 script.js 내용 번들링 (독립 싱글 파일화)
-        try {
-            const styleText = await fetch('style.css').then(r => r.ok ? r.text() : null).catch(() => null);
-            const scriptText = await fetch('script.js').then(r => r.ok ? r.text() : null).catch(() => null);
-
-            if (styleText) {
-                html = html.replace(/<link[^>]*href=["']style\.css["'][^>]*>/i, `<style>\n${styleText}\n</style>`);
-            }
-            if (scriptText) {
-                html = html.replace(/<script[^>]*src=["']script\.js["'][^>]*><\/script>/i, `${dataScript}\n<script>\n${scriptText}\n</script>`);
-            } else if (html.includes('<script src="script.js">')) {
-                html = html.replace('<script src="script.js">', dataScript + '<script src="script.js">');
-            } else if (html.includes("</body>")) {
-                html = html.replace("</body>", dataScript + "</body>");
-            } else {
-                html += dataScript;
-            }
-        } catch (e) {
-            console.warn("Script/Style bundle fallback:", e);
-            if (html.includes('<script src="script.js">')) {
-                html = html.replace('<script src="script.js">', dataScript + '<script src="script.js">');
-            } else if (html.includes("</body>")) {
-                html = html.replace("</body>", dataScript + "</body>");
-            }
+        if (html.includes("</body>")) {
+            html = html.replace("</body>", dataScript + "</body>");
+        } else {
+            html += dataScript;
         }
         
         const blob = new Blob([html], { type: 'text/html' }); 

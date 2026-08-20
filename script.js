@@ -522,11 +522,12 @@ async function init() {
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
         const L2 = new THREE.DirectionalLight(0xffffff, 0.8); L2.position.set(10, 20, 10); scene.add(L2);
         
+        await loadEverything();
         // 5개 카테고리별 원통 3D 메시 생성 및 씬에 추가
         for (let i = 0; i < CATEGORIES.length; i++) {
             const cyl = await createCylinderMesh(i); scene.add(cyl.group);
+            await updateCylinderTexture(i);
         }
-        await loadEverything();
     } catch (error) { 
         logDebug('❌ INIT FAIL: ' + error.message); 
     } finally { 

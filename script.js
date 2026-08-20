@@ -1670,22 +1670,27 @@ window.saveCurrentToSet = (id) => { cylinders.forEach((cyl, catIdx) => { const r
 window.saveToShareableFile = async () => {
     showMessage("Fashion Rewinder 전시용 파일 생성 중... (이미지 번들링)");
     try {
-        const imageUrlToDataURL = async (url) => {
-            if (!url) return url;
-            if (url.startsWith('data:')) return url;
-            try {
-                const response = await fetch(url);
-                const blob = await response.blob();
-                return new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.onerror = () => resolve(url);
-                    reader.readAsDataURL(blob);
-                });
-            } catch (e) {
-                console.warn("Failed to convert image to Data URL:", url, e);
-                return url;
-            }
+        const imageUrlToDataURL = (url) => {
+            if (!url) return Promise.resolve(url);
+            if (url.startsWith('data:')) return Promise.resolve(url);
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.naturalWidth || img.width || 480;
+                        canvas.height = img.naturalHeight || img.height || 480;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        resolve(canvas.toDataURL('image/png'));
+                    } catch (e) {
+                        console.warn("Canvas toDataURL failed:", e);
+                        resolve(url);
+                    }
+                };
+                img.onerror = () => resolve(url);
+                img.src = url;
+            });
         };
 
         const bundledCategories = await Promise.all(CATEGORIES.map(async (cat) => {

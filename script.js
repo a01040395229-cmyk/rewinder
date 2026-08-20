@@ -516,7 +516,11 @@ async function init() {
         
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); 
         renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
-        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        const canvasContainer = document.getElementById('canvas-container');
+        if (canvasContainer) {
+            canvasContainer.innerHTML = '';
+            canvasContainer.appendChild(renderer.domElement);
+        }
         
         // 조명 설정 (AmbientLight + DirectionalLight)
         scene.add(new THREE.AmbientLight(0xffffff, 0.7));
@@ -1005,13 +1009,7 @@ async function loadCylinderImage(url) {
         if (useCrossOrigin) {
             img.crossOrigin = "anonymous";
         }
-        img.onload = () => {
-            if (isImageSafeForCanvas(img)) {
-                resolve(img);
-            } else {
-                resolve(null);
-            }
-        };
+        img.onload = () => resolve(img);
         img.onerror = () => resolve(null);
         img.src = srcUrl;
     });
@@ -1064,9 +1062,8 @@ async function updateCylinderTexture(index) {
     if (categoryItems.length > 0) {
         await Promise.all(Array.from({ length: ITEM_COUNT }).map((_, i) => new Promise(async (res) => {
             const item = categoryItems[i % categoryItems.length];
-            const itemUrl = item ? (item.url || item.image || "") : "";
-            if (!item || !itemUrl) return res();
-            const img = await loadCylinderImage(itemUrl);
+            if (!item || !item.url) return res();
+            const img = await loadCylinderImage(item.url);
             if (img) {
                 const scale = Math.max(sW / img.width, sH / img.height);
                 const dW = img.width * scale, dH = img.height * scale;
@@ -1539,7 +1536,7 @@ function createUI() {
                      ondragleave="handleDragLeave(event)"
                      ondragend="handleDragEnd(event)"
                      ondrop="handleDrop(event, ${cat.id}, ${i})">
-                    <div class="thumb" onclick="showInfoPopup(${cat.id}, ${i})"><img src="${item.url || item.image || ''}"></div>
+                    <div class="thumb" onclick="showInfoPopup(${cat.id}, ${i})"><img src="${item.url}"></div>
                     <div class="delete-btn" onclick="deleteImage(${cat.id}, ${i})">×</div>
                     <div class="order-btn-group">
                         <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, -1)" title="왼쪽으로 이동" ${i === 0 ? 'disabled style="opacity:0.3;cursor:default;"' : ''}>◀</button>
@@ -1664,9 +1661,8 @@ window.saveToShareableFile = async () => {
 
         const bundledCategories = await Promise.all(CATEGORIES.map(async (cat) => {
             const bundledItems = await Promise.all(cat.items.map(async (item) => {
-                const itemUrl = item ? (item.url || item.image || "") : "";
-                const dataUrl = await imageUrlToDataURL(itemUrl);
-                return { ...item, url: dataUrl, image: dataUrl };
+                const dataUrl = await imageUrlToDataURL(item.url);
+                return { ...item, url: dataUrl };
             }));
             return { ...cat, items: bundledItems };
         }));
@@ -1679,34 +1675,19 @@ window.saveToShareableFile = async () => {
 
         let html = document.documentElement.outerHTML; 
         
-        // 1. 캔버스 중복 생성을 막기 위해 canvas-container 초기화
-        html = html.replace(/<div id="canvas-container">.*?<\/div>/s, '<div id="canvas-container"></div>');
-
-        // 2. 내보내기 시 번들링 메시지 박스 잔상 제거 및 초기화
-        html = html.replace(/<div id="message-box".*?<\/div>/s, '<div id="message-box"></div>');
-
-        // 3. 갤러리 관리자 모달(management-panel) 및 정보 팝업이 닫힌 상태(display:none)로 시작하도록 복원
-        html = html.replace(/id="management-panel"[^>]*style="[^"]*"/g, 'id="management-panel" style="display: none;"');
-        if (!html.includes('id="management-panel" style=')) {
-            html = html.replace('id="management-panel"', 'id="management-panel" style="display: none;"');
-        }
-        html = html.replace(/id="info-popup"[^>]*style="[^"]*"/g, 'id="info-popup" style="display: none;"');
-
-        // 4. 스플래시 로딩 화면(loading-screen) 및 가이드 모달(instruction-overlay)이 처음 접속할 때와 동일하게 뜨도록 복원
-        html = html.replace(/id="loading-screen"[^>]*style="[^"]*"/g, 'id="loading-screen"');
-        html = html.replace(/id="instruction-overlay"[^>]*style="[^"]*"/g, 'id="instruction-overlay"');
-
-        // 5. 기존 EMBEDDED_DATA 스크립트 제거
-        html = html.replace(/<script>window\.EMBEDDED_DATA = .*?<\/script>/gs, ""); 
-
-        // 6. 새 EMBEDDED_DATA 생성
-        const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
-        const dataScript = `<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
+        // 1. canvas-container 내부의 기존 static canvas 태그 제거
+        html = html.replace(/<div id="canvas-container">[\s\S]*?<\/div>/, '<div id="canvas-container"></div>');
         
-        // 7. script.js 실행 "전"에 EMBEDDED_DATA가 준비되도록 script.js 바로 앞에 위치하도록 삽입
-        if (html.includes('<script src="script.js"></script>')) {
-            html = html.replace('<script src="script.js"></script>', dataScript + '<script src="script.js"></script>');
-        } else if (html.includes("</body>")) {
+        // 2. category-controls 동적 썸네일 DOM 제거
+        html = html.replace(/<div id="category-controls">[\s\S]*?<\/div>/, '<div id="category-controls"></div>');
+
+        // 3. 기존 EMBEDDED_DATA 스크립트 제거
+        html = html.replace(/<script>\s*window\.EMBEDDED_DATA\s*=\s*[\s\S]*?<\/script>/gi, ""); 
+        
+        const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
+        const dataScript = `\n<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
+
+        if (html.includes("</body>")) {
             html = html.replace("</body>", dataScript + "</body>");
         } else {
             html += dataScript;
@@ -1758,7 +1739,7 @@ function saveState() {
 window.showInfoPopup = (catId, idx) => { 
     const it = CATEGORIES[catId].items[idx]; 
     if (!it) return; 
-    document.getElementById('info-img').src = it.url || it.image || ""; 
+    document.getElementById('info-img').src = it.url; 
     document.getElementById('info-category').innerText = CATEGORIES[catId].name; 
     document.getElementById('info-title').innerText = it.title || "ITEM"; 
     document.getElementById('info-desc').innerText = it.desc || "상세 정보 없음"; 

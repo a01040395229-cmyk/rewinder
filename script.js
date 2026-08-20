@@ -3,13 +3,13 @@
 // ==========================================================================
 
 // 기존 브라우저 캐시(잘못된 이미지 경로 및 스타일 세트) 1회 초기화
-if (!localStorage.getItem('fm_reset_v6')) {
+if (!localStorage.getItem('fm_reset_v7')) {
     localStorage.clear();
     if (window.indexedDB) {
         indexedDB.deleteDatabase('FashionMixerDB');
     }
-    localStorage.setItem('fm_reset_v6', 'true');
-    console.log('Previous cached data cleared for v6 update.');
+    localStorage.setItem('fm_reset_v7', 'true');
+    console.log('Previous cached data cleared for v7 update.');
 }
 
 // --------------------------------------------------------------------------

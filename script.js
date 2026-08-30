@@ -37,7 +37,7 @@ let pointerStartTime = 0, pointerStartPos = { x: 0, y: 0 };
 
 // 원통 배치 및 회전 정밀도 파라미터
 const ITEM_COUNT = 20;                             // 원통 1개당 배치되는 패션 아이템 슬롯 개수 (20개)
-const CYLINDER_RADIUS = 0.98;                      // 3D 원통 반경
+const CYLINDER_RADIUS = 0.9;                       // 3D 원통 반경
 let isLocked = false;                              // 전시 모드(Locked Mode) 잠금 여부
 const SLOT_WIDTH = (2 * Math.PI * CYLINDER_RADIUS) / ITEM_COUNT; // 1개 아이템 슬롯 호의 길이
 const ROTATION_STEP = (Math.PI * 2) / ITEM_COUNT;  // 아이템 1개당 회전 각도 (18도)
@@ -514,8 +514,8 @@ async function init() {
         camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000); 
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.0)); 
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,6 +542,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.0));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -925,8 +926,8 @@ async function createCylinderMesh(index) {
     
     group.position.y = yPos;
     
-    // 원통 3D 지오메트리 세그먼트 생성
-    const geo = new THREE.CylinderGeometry(CYLINDER_RADIUS, CYLINDER_RADIUS, h, 160, 1, true);
+    // 원통 3D 지오메트리 세그먼트 생성 (스탠바이미 및 저전력 GPU 최적화: 96 세그먼트로 매끄러운 곡면 유지 & 버텍스 연산 40% 절감)
+    const geo = new THREE.CylinderGeometry(CYLINDER_RADIUS, CYLINDER_RADIUS, h, 96, 1, true);
     
     // 3D 원통 원래 정점 위치와 2D 평면 정점 위치 데이터 구조 저장
     const posAttr = geo.attributes.position;
@@ -958,7 +959,27 @@ async function createCylinderMesh(index) {
     }
     geo.userData = { origPositions, flatPositions, origNormals };
 
-    const mat = new THREE.MeshPhysicalMaterial({ side: THREE.DoubleSide, roughness: 0.9, metalness: 0.0 });
+    // TV/임베디드 GPU(Mali 계열)에 최적화된 MeshStandardMaterial 적용 (투명 간격 지원)
+    const mat = new THREE.MeshStandardMaterial({ 
+        side: THREE.DoubleSide, 
+        roughness: 0.8, 
+        metalness: 0.0,
+        transparent: true,
+        alphaTest: 0.05
+    });
+
+    // 원통 틈새 사이로 보이는 뒤쪽/안쪽 면(!gl_FrontFacing)을 어둡게 처리하여 깊이감 및 원근감 연출
+    mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <dithering_fragment>',
+            `#include <dithering_fragment>
+            if (!gl_FrontFacing) {
+                gl_FragColor.rgb *= 0.32; // 뒤쪽 안쪽 면 어둡게 쉐이딩 (그림자 효과)
+            }
+            `
+        );
+    };
+
     const L = Math.PI * 2 * CYLINDER_RADIUS;
 
     const mesh = new THREE.Mesh(geo, mat); 
@@ -1041,7 +1062,7 @@ async function loadCylinderImage(url) {
     return null;
 }
 
-// 20개 아이템 이미지를 2D Canvas에 베이킹하여 원통 표면 텍스처로 렌더링
+// 20개 아이템 이미지를 2D Canvas에 베이킹하여 원통 표면 텍스처로 렌더링 (각 칸 간격 분리)
 async function updateCylinderTexture(index) {
     let hVal = 7.0; 
     if (index === 0) hVal = 8.5; 
@@ -1050,14 +1071,29 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    const MAX_WIDTH = 8192; 
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
+    const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
     const canvas = document.createElement('canvas'); 
     canvas.width = MAX_WIDTH; 
     canvas.height = Math.round((MAX_WIDTH / ITEM_COUNT) * hRatio);
-    const ctx = canvas.getContext('2d'); ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext('2d', { alpha: true }); 
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    // 배경은 투명하게 비워 각 칸 사이의 간격을 띄움
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
     const sW = canvas.width / ITEM_COUNT, sH = canvas.height;
+    
+    // 전체 카테고리 및 상하/좌우 모든 칸의 떨어진 거리(간격)를 완벽히 통일
+    const UNIFORM_GAP = Math.round(sW * 0.08); // 가로/세로 동일한 통합 간격 (약 16px)
+    const gapX = UNIFORM_GAP;
+    const gapY = UNIFORM_GAP;
+    const cardW = sW - gapX;
+    const cardH = sH - gapY;
+    const cardRadius = 5; // 각 칸 코너 라운드 반경 5
     
     if (categoryItems.length > 0) {
         await Promise.all(Array.from({ length: ITEM_COUNT }).map((_, i) => new Promise(async (res) => {
@@ -1065,25 +1101,46 @@ async function updateCylinderTexture(index) {
             if (!item || !item.url) return res();
             const img = await loadCylinderImage(item.url);
             if (img) {
-                const scale = Math.max(sW / img.width, sH / img.height);
+                const cardX = (i * sW) + (gapX / 2);
+                const cardY = gapY / 2;
+
+                ctx.save(); 
+                ctx.beginPath(); 
+                if (ctx.roundRect) {
+                    ctx.roundRect(cardX, cardY, cardW, cardH, cardRadius);
+                } else {
+                    ctx.rect(cardX, cardY, cardW, cardH);
+                }
+                
+                // 카드 배경 및 클리핑
+                ctx.fillStyle = "#ffffff";
+                ctx.fill();
+                ctx.clip();
+
+                const scale = Math.max(cardW / img.width, cardH / img.height);
                 const dW = img.width * scale, dH = img.height * scale;
-                ctx.save(); ctx.beginPath(); ctx.rect(i * sW, 0, sW, sH); ctx.clip();
-                ctx.drawImage(img, (i * sW) + (sW - dW)/2, (sH - dH)/2, dW, dH); ctx.restore();
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, cardX + (cardW - dW)/2, cardY + (cardH - dH)/2, dW, dH); 
+                
+                ctx.restore();
             }
             res();
         })));
     }
     
     const tex = new THREE.CanvasTexture(canvas); 
-    const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-    tex.anisotropy = maxAnisotropy;
-    tex.minFilter = THREE.LinearFilter;
+    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 8;
+    tex.anisotropy = Math.min(8, maxAnisotropy);
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;
     
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     
-    cylinders[index].mesh.material.map = tex; cylinders[index].mesh.material.needsUpdate = true;
+    cylinders[index].mesh.material.map = tex; 
+    cylinders[index].mesh.material.needsUpdate = true;
     if (cylinders[index].clones) {
         cylinders[index].clones.forEach(clone => {
             clone.material.map = tex;
@@ -1209,7 +1266,12 @@ function handleCylinderClick(e) {
 window.togglePanel = (e) => { 
     if (e && e.stopPropagation) e.stopPropagation(); 
     const p = document.getElementById('management-panel'); 
-    p.style.display = p.style.display !== 'block' ? 'block' : 'none'; 
+    if (p.style.display !== 'block') {
+        createUI();
+        p.style.display = 'block';
+    } else {
+        p.style.display = 'none';
+    }
 };
 window.addEventListener('pointerdown', (e) => {
     const p = document.getElementById('management-panel');
@@ -1229,16 +1291,48 @@ window.updateTopCarousel = () => {
         return;
     }
 
-    list.innerHTML = STYLE_SETS.map((s, idx) => `
-        <div class="side-style-item ${editingSetId === s.id || (!editingSetId && idx === 0) ? 'active' : ''}" 
+    const baseHTML = STYLE_SETS.map((s, idx) => `
+        <div class="side-style-item" 
              data-id="${s.id}" data-idx="${idx}"
-             onclick="window.applyStyleSet(${s.id}, ${idx})">
+             onclick="window.applyStyleSet(${s.id}, this)">
             ${s.name}
         </div>`).join(''); 
     
+    const copies = 50;
+    list.innerHTML = baseHTML.repeat(copies);
+    
+    if (!container.dataset.scrollInited) {
+        container.dataset.scrollInited = "true";
+        container.addEventListener('scroll', () => {
+            if (!STYLE_SETS.length) return;
+            const itemHeight = list.children[0]?.offsetHeight || 0;
+            const gap = 12; 
+            const groupHeight = (itemHeight + gap) * STYLE_SETS.length;
+            const middleScroll = groupHeight * Math.floor(copies / 2);
+            
+            if (container.scrollTop < groupHeight * 5 || container.scrollTop > groupHeight * (copies - 5)) {
+                const currentOffsetInGroup = container.scrollTop % groupHeight;
+                container.scrollTop = middleScroll + currentOffsetInGroup;
+            }
+            
+            updateActiveSideStyle();
+        }, { passive: true });
+    }
+
     setTimeout(() => {
+        let activeIdx = STYLE_SETS.findIndex(s => s.id === editingSetId);
+        if (activeIdx === -1) activeIdx = 0;
+        
+        const middleBaseIdx = STYLE_SETS.length * Math.floor(copies / 2);
+        const targetItem = list.children[middleBaseIdx + activeIdx];
+        
+        if (targetItem) {
+            const itemCenter = targetItem.offsetTop + targetItem.offsetHeight / 2;
+            container.scrollTop = itemCenter - container.clientHeight / 2;
+        }
+        
         updateActiveSideStyle();
-    }, 0);
+    }, 10);
 
     initSideWheelDrag();
 };
@@ -1525,12 +1619,26 @@ window.handleSetDrop = (e, targetIdx) => {
 // 16. 관리 패널 HTML 동적 생성 함수 (createUI)
 // --------------------------------------------------------------------------
 function createUI() {
-    document.getElementById('category-controls').innerHTML = CATEGORIES.map(cat => `
+    document.getElementById('category-controls').innerHTML = CATEGORIES.map(cat => {
+        const curRot = (window.cylinders && window.cylinders[cat.id]) ? (window.cylinders[cat.id].targetRotation || 0) : 0;
+        const activeIndex = ((Math.round(-curRot / ROTATION_STEP) % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT;
+
+        return `
         <div class="category-section">
-            <div class="font-black text-[10px] text-slate-400 mb-3 uppercase">${cat.name}</div>
-            <label class="block bg-slate-900 text-white text-[10px] p-2 text-center rounded-lg cursor-pointer mb-3">+ UPLOAD<input type="file" multiple class="hidden" onchange="handleFileUpload(event, ${cat.id})"></label>
-            <div class="thumbnail-grid">${cat.items.map((item, i) => `
-                <div class="thumb-container" draggable="true" 
+            <div class="category-header">
+                <div class="category-title">${cat.name}</div>
+                <label class="category-add-btn" title="이미지 추가 (+)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    <input type="file" multiple class="hidden" onchange="handleFileUpload(event, ${cat.id})">
+                </label>
+            </div>
+            <div class="thumbnail-grid">${cat.items.map((item, i) => {
+                const isActive = (i === activeIndex);
+                return `
+                <div class="thumb-container ${isActive ? 'is-active' : ''}" draggable="true" 
                      ondragstart="handleDragStart(event, ${cat.id}, ${i})" 
                      ondragover="handleDragOver(event)" 
                      ondragenter="handleDragEnter(event)"
@@ -1538,36 +1646,29 @@ function createUI() {
                      ondragend="handleDragEnd(event)"
                      ondrop="handleDrop(event, ${cat.id}, ${i})">
                     <div class="thumb" onclick="showInfoPopup(${cat.id}, ${i})"><img src="${item.url}"></div>
-                    <div class="delete-btn" onclick="deleteImage(${cat.id}, ${i})">×</div>
-                    <div class="order-btn-group">
-                        <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, -1)" title="왼쪽으로 이동" ${i === 0 ? 'disabled style="opacity:0.3;cursor:default;"' : ''}>◀</button>
-                        <span class="text-[9px] text-slate-400 font-bold">${i + 1}</span>
-                        <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, 1)" title="오른쪽으로 이동" ${i === cat.items.length - 1 ? 'disabled style="opacity:0.3;cursor:default;"' : ''}>▶</button>
+                    <div class="delete-btn" onclick="deleteImage(${cat.id}, ${i})" title="삭제">×</div>
+                    <div class="item-inputs-stack">
+                        <select class="set-assigner ${item.setIds && item.setIds.length > 0 ? 'has-set' : ''}" onchange="assignSetForItem(${cat.id}, ${i}, this.value)" title="세트 지정">
+                            <option value="">NO SET</option>
+                            ${STYLE_SETS.map(s => `
+                                <option value="${s.id}" ${item.setIds?.includes(s.id) ? 'selected' : ''}>${s.name}</option>
+                            `).join('')}
+                        </select>
+                        <input type="text" class="item-title" onchange="updateItemTitle(${cat.id}, ${i}, this.value)" placeholder="NAME" value="${item.title || ''}">
+                        <input type="text" class="item-memo" onchange="updateItemMemo(${cat.id}, ${i}, this.value)" placeholder="DESC" value="${item.desc || ''}">
+                        <input type="text" class="item-link-input" onchange="updateItemLink(${cat.id}, ${i}, this.value)" placeholder="URL" value="${item.link || ''}">
                     </div>
-                    ${(() => {
-                        const assignedNames = STYLE_SETS.filter(s => item.setIds?.includes(s.id)).map(s => s.name);
-                        const labelText = assignedNames.length > 0 ? assignedNames.join(', ') : 'NO SET';
-                        return `
-                        <div class="set-dropdown-container">
-                            <div class="set-dropdown-trigger" onclick="event.stopPropagation(); this.nextElementSibling.classList.toggle('active')">
-                                <span class="set-trigger-label" title="${labelText}">${labelText}</span>
-                                <span>▼</span>
-                            </div>
-                            <div class="set-dropdown-menu">
-                                ${STYLE_SETS.map(s => `
-                                    <div class="dropdown-item ${item.setIds?.includes(s.id) ? 'selected' : ''}" onclick="event.stopPropagation(); toggleSetForItem(${cat.id}, ${i}, ${s.id})">
-                                        <input type="checkbox" ${item.setIds?.includes(s.id) ? 'checked' : ''}>
-                                        <span title="${s.name}">${s.name}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>`;
-                    })()}
-                    <textarea class="item-title" onchange="updateItemTitle(${cat.id}, ${i}, this.value)" placeholder="NAME">${item.title || ''}</textarea>
-                    <textarea class="item-memo" onchange="updateItemMemo(${cat.id}, ${i}, this.value)" placeholder="DESC">${item.desc || ''}</textarea>
-                    <input type="text" class="item-link-input" onchange="updateItemLink(${cat.id}, ${i}, this.value)" placeholder="URL LINK" value="${item.link || ''}">
-                </div>`).join('')}</div>
-        </div>`).join('');
+                    <div class="order-btn-group">
+                        <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, -1)" title="왼쪽으로 이동" ${i === 0 ? 'disabled style="opacity:0.2;cursor:default;"' : ''}>◀</button>
+                        <span class="order-idx">${i + 1}</span>
+                        <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, 1)" title="오른쪽으로 이동" ${i === cat.items.length - 1 ? 'disabled style="opacity:0.2;cursor:default;"' : ''}>▶</button>
+                    </div>
+                    <div class="item-active-indicator ${isActive ? '' : 'invisible'}"></div>
+                </div>`;
+            }).join('')}</div>
+        </div>`;
+    }).join('');
+
     document.getElementById('set-settings-list').innerHTML = STYLE_SETS.map((s, i) => `
         <div class="set-item-row" draggable="true" ondragstart="handleSetDragStart(event, ${i})" ondragover="handleSetDragOver(event)" ondrop="handleSetDrop(event, ${i})">
             <div class="flex flex-col gap-1">
@@ -1616,22 +1717,35 @@ window.alignToSet = (setId) => {
     });
 };
 
-window.applyStyleSet = (id, idx) => { 
+window.applyStyleSet = (id, element) => { 
     editingSetId = id; 
     window.alignToSet(id); 
-    if (idx !== undefined) { 
-        const container = document.getElementById('side-style-container');
-        const items = container ? container.querySelectorAll('.side-style-item') : null;
-        if (items && items[idx]) {
-            items[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+    if (element && typeof element.scrollIntoView === 'function') { 
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } 
     if (typeof showSetReference === 'function') {
         showSetReference();
     }
 };
 window.addStyleSet = () => { const id = STYLE_SETS.length > 0 ? Math.max(...STYLE_SETS.map(s => s.id)) + 1 : 1; STYLE_SETS.push({ id, name: "NAME" }); saveState(); createUI(); };
-window.toggleSetForItem = (catId, idx, setId) => { const item = CATEGORIES[catId].items[idx]; if (!item.setIds) item.setIds = []; if (item.setIds.includes(setId)) { item.setIds = item.setIds.filter(id => id !== setId); } else { CATEGORIES[catId].items.forEach((it, i) => { if (i !== idx && it.setIds) it.setIds = it.setIds.filter(id => id !== setId); }); item.setIds.push(setId); } saveState(); createUI(); };
+window.assignSetForItem = (catId, idx, setIdStr) => {
+    const item = CATEGORIES[catId].items[idx];
+    if (!item.setIds) item.setIds = [];
+    
+    if (!setIdStr) {
+        item.setIds = [];
+    } else {
+        const setId = parseInt(setIdStr, 10);
+        CATEGORIES[catId].items.forEach(it => {
+            if (it.setIds) {
+                it.setIds = it.setIds.filter(id => id !== setId);
+            }
+        });
+        item.setIds = [setId];
+    }
+    if (typeof saveState === 'function') saveState(); 
+    createUI();
+};
 window.renameStyleSet = (id, n) => { const s = STYLE_SETS.find(x => x.id === id); if(s) { s.name = n.toUpperCase(); saveState(); createUI(); } };
 window.saveCurrentToSet = (id) => { cylinders.forEach((cyl, catIdx) => { const raw = Math.round(-cyl.targetRotation / ROTATION_STEP); const fIdx = ((raw % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT; CATEGORIES[catIdx].items.forEach(it => { if (it && it.setIds) it.setIds = it.setIds.filter(setId => setId !== id); }); const it = CATEGORIES[catIdx].items[fIdx]; if(it) { if(!it.setIds) it.setIds = []; it.setIds.push(id); } }); editingSetId = id; saveState(); createUI(); showMessage("현재 착장이 스타일 세트에 저장되었습니다! ✨"); };
 
@@ -1676,13 +1790,23 @@ window.saveToShareableFile = async () => {
             rotations: cylinders.map(c => c.targetRotation)
         };
 
+        const catContainer = document.getElementById('category-controls');
+        const setListContainer = document.getElementById('set-settings-list');
+        const canvasContainer = document.getElementById('canvas-container');
+        
+        const backupCat = catContainer ? catContainer.innerHTML : '';
+        const backupSetList = setListContainer ? setListContainer.innerHTML : '';
+        const backupCanvas = canvasContainer ? canvasContainer.innerHTML : '';
+        
+        if (catContainer) catContainer.innerHTML = '';
+        if (setListContainer) setListContainer.innerHTML = '';
+        if (canvasContainer) canvasContainer.innerHTML = '';
+
         let html = document.documentElement.outerHTML; 
-        
-        // 1. canvas-container 내부의 기존 static canvas 태그 제거
-        html = html.replace(/<div id="canvas-container">[\s\S]*?<\/div>/, '<div id="canvas-container"></div>');
-        
-        // 2. category-controls 동적 썸네일 DOM 제거
-        html = html.replace(/<div id="category-controls">[\s\S]*?<\/div>/, '<div id="category-controls"></div>');
+
+        if (catContainer) catContainer.innerHTML = backupCat;
+        if (setListContainer) setListContainer.innerHTML = backupSetList;
+        if (canvasContainer) canvasContainer.innerHTML = backupCanvas;
 
         // 3. 기존 EMBEDDED_DATA 스크립트 제거
         html = html.replace(/<script>\s*window\.EMBEDDED_DATA\s*=\s*[\s\S]*?<\/script>/gi, ""); 
@@ -1808,21 +1932,6 @@ window.updateItemMemo = (cId, idx, val) => { CATEGORIES[cId].items[idx].desc = v
 window.updateItemLink = (cId, idx, val) => { CATEGORIES[cId].items[idx].link = val; saveState(); };
 function updateStorageStatus() { const eb = window.EMBEDDED_DATA !== undefined; document.getElementById('storage-status').innerHTML = eb ? '<span class="text-green-500 font-black">● 데이터 내장됨</span>' : '<span>○ 브라우저 저장소</span>'; }
 function showMessage(t) { const b = document.getElementById('message-box'); b.innerText = t; b.style.display = 'block'; setTimeout(() => b.style.display = 'none', 3000); }
-function playAudio() {
-    const audio = document.getElementById('bgm-audio');
-    const path = document.getElementById('volume-icon-path');
-    if (!audio) return;
-    
-    audio.play().then(() => {
-        audioInitialized = true;
-        isMuted = false;
-        if (path) {
-            path.setAttribute('d', 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77zM3 9v6h4l5 5V4L7 9H3z');
-        }
-    }).catch((e) => {
-        console.log('Audio playback pending user interaction:', e);
-    });
-}
 
 function hideLoader() { 
     const loader = document.getElementById('loading-screen');
@@ -1864,13 +1973,12 @@ let audioInitialized = false;
 
 function updateAudioUI(playing) {
     const btn = document.getElementById('audio-control-btn');
-    const path = document.getElementById('volume-icon-path');
-    if (!path) return;
+    const icon = document.getElementById('volume-icon');
     if (playing && !isMuted) {
-        path.setAttribute('d', 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77zM3 9v6h4l5 5V4L7 9H3z');
+        if (icon) icon.src = 'sound icon 1.png';
         if (btn) btn.classList.add('playing');
     } else {
-        path.setAttribute('d', 'M4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73 4.27 3zM12 4L9.91 6.09 12 8.18V4z');
+        if (icon) icon.src = 'sound icon 2.png';
         if (btn) btn.classList.remove('playing');
     }
 }

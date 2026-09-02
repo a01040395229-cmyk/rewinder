@@ -1257,7 +1257,7 @@ function onPointerMove(e) {
         }
 
         if (hasDragged) {
-            const sensitivity = isFlatView ? -0.004 : 0.004;
+            const sensitivity = isFlatView ? 0.004 : -0.004;
             const deltaX = e.clientX - dragStartX;
             const deltaRot = deltaX * sensitivity;
 
@@ -1445,7 +1445,25 @@ window.scrollToSetIndex = (idx) => {
     const container = document.getElementById('side-style-container');
     const items = container ? container.querySelectorAll('.side-style-item') : null;
     if (items && items[idx]) {
-        items[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const normalItem = container.querySelector('.side-style-item:not(.active)') || items[0];
+        const itemHeight = normalItem.offsetHeight || 0;
+        const gap = 12;
+        const fullItemHeight = itemHeight + gap;
+        const computedStyle = window.getComputedStyle(container);
+        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+        
+        const targetScrollTop = paddingTop + idx * fullItemHeight + itemHeight / 2 - container.clientHeight / 2;
+        container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+    }
+};
+
+window.centerSideStyleItem = (item) => {
+    const container = document.getElementById('side-style-container');
+    if (!container || !item) return;
+    const items = container.querySelectorAll('.side-style-item');
+    const idx = Array.from(items).indexOf(item);
+    if (idx !== -1) {
+        window.scrollToSetIndex(idx);
     }
 };
 
@@ -1471,7 +1489,11 @@ function initSideWheelDrag() {
             const setId = parseInt(item.getAttribute('data-id'), 10);
             if (!isNaN(setId)) {
                 window.applyStyleSet(setId);
-                item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (window.centerSideStyleItem) {
+                    window.centerSideStyleItem(item);
+                } else {
+                    item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             }
         }
     }, true);
@@ -1525,13 +1547,17 @@ function updateActiveSideStyle() {
     const items = container.querySelectorAll('.side-style-item');
     if (!items.length) return;
     
-    const itemHeight = items[0].offsetHeight || 0;
+    const normalItem = container.querySelector('.side-style-item:not(.active)') || items[0];
+    const itemHeight = normalItem.offsetHeight || 0;
     const gap = 12;
     const fullItemHeight = itemHeight + gap;
     if (fullItemHeight === 0) return;
     
+    const computedStyle = window.getComputedStyle(container);
+    const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+    
     const centerScrollY = container.scrollTop + container.clientHeight / 2;
-    let closestIndex = Math.round((centerScrollY - itemHeight / 2) / fullItemHeight);
+    let closestIndex = Math.round((centerScrollY - paddingTop - itemHeight / 2) / fullItemHeight);
     
     if (closestIndex < 0) closestIndex = 0;
     if (closestIndex >= items.length) closestIndex = items.length - 1;

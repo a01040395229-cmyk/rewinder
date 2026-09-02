@@ -28,7 +28,7 @@ window.addEventListener('error', function(e) { logDebug('❌ ERROR: ' + e.messag
 let scene, camera, renderer, cylinders = [];
 
 // 마우스/터치 드래그 및 회전 관련 상태
-let isDragging = false, dragStartX = 0, dragStartRotation = 0, dragStartRotations = [], activeCylinderIndex = -1;
+let isDragging = false, hasDragged = false, dragStartX = 0, dragStartRotation = 0, dragStartRotations = [], activeCylinderIndex = -1;
 let isHovering = false; 
 let hoveredCylinderIndex = -1;
 let lastInteractionTime = 0; 
@@ -1138,6 +1138,7 @@ function onPointerDown(e) {
         activeCylinderIndex = cylinders.findIndex(c => c.group === o);
         if (activeCylinderIndex !== -1) { 
             isDragging = true; 
+            hasDragged = false;
             pauseAutoDuration = 5000;
             dragStartX = e.clientX; 
             dragStartRotation = cylinders[activeCylinderIndex].targetRotation; 
@@ -1185,12 +1186,19 @@ function onPointerMove(e) {
     }
     
     if (isDragging && activeCylinderIndex !== -1) { 
-        const sensitivity = isFlatView ? 0.0035 : 0.004;
-        const deltaX = e.clientX - dragStartX;
-        const deltaRot = deltaX * sensitivity;
+        const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
+        if (dist > 5) {
+            hasDragged = true;
+        }
 
-        // 클릭하여 드래그한 카테고리만 독립 회전
-        cylinders[activeCylinderIndex].targetRotation = dragStartRotation + deltaRot; 
+        if (hasDragged) {
+            const sensitivity = isFlatView ? 0.0035 : 0.004;
+            const deltaX = e.clientX - dragStartX;
+            const deltaRot = deltaX * sensitivity;
+
+            // 클릭하여 드래그한 카테고리만 독립 회전
+            cylinders[activeCylinderIndex].targetRotation = dragStartRotation + deltaRot; 
+        }
         document.body.style.cursor = 'default'; 
     }
 }
@@ -1198,19 +1206,26 @@ function onPointerMove(e) {
 function onPointerUp(e) {
     if (e.target.closest('#management-panel, #side-style-wrapper, #instruction-overlay, #info-popup, .controls, #audio-control-btn, .ui-overlay, #management-btn-wrapper')) {
         isDragging = false;
+        hasDragged = false;
         return;
     }
     const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
-    if ((Date.now() - pointerStartTime) < 250 && dist < 5 && activeCylinderIndex !== -1) handleCylinderClick(e);
+    
+    if (!hasDragged && dist < 5 && activeCylinderIndex !== -1) {
+        handleCylinderClick(e);
+    }
+    
+    if (hasDragged && activeCylinderIndex !== -1) { 
+        cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
+        if (typeof saveState === 'function') saveState(); 
+    }
+
     isDragging = false; 
+    hasDragged = false;
     isHovering = false;
     hoveredCylinderIndex = -1;
     pauseAutoDuration = 5000;
-    if (activeCylinderIndex !== -1) { 
-        cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
-        saveState(); 
-        activeCylinderIndex = -1;
-    }
+    activeCylinderIndex = -1;
 }
 
 // 아이템 클릭 시 팝업 띄우기

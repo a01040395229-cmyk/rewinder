@@ -3,13 +3,13 @@
 // ==========================================================================
 
 // 기존 브라우저 캐시(잘못된 이미지 경로 및 스타일 세트) 1회 초기화
-if (!localStorage.getItem('fm_reset_v7')) {
+if (!localStorage.getItem('fm_reset_v8')) {
     localStorage.clear();
     if (window.indexedDB) {
         indexedDB.deleteDatabase('FashionMixerDB');
     }
-    localStorage.setItem('fm_reset_v7', 'true');
-    console.log('Previous cached data cleared for v7 update.');
+    localStorage.setItem('fm_reset_v8', 'true');
+    console.log('Previous cached data cleared for v8 update.');
 }
 
 // --------------------------------------------------------------------------
@@ -903,7 +903,8 @@ async function createCylinderMesh(index) {
         roughness: 0.8, 
         metalness: 0.0,
         transparent: true,
-        alphaTest: 0.05
+        alphaTest: 0.05,
+        depthWrite: true // 투명도 정렬 오류로 인한 겹침(Overlapping) 현상 방지
     });
 
     mat.userData = { shader: null };

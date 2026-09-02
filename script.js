@@ -1006,8 +1006,7 @@ async function createCylinderMesh(index) {
         clones.push(clone);
     });
 
-    // 기존 속도가 너무 느려 렉으로 보일 수 있으므로 속도를 약 3배 증가
-    const defaultSpeeds = [0.0018, -0.0015, 0.0021, -0.0012, 0.0018];
+    const defaultSpeeds = [0.0006, -0.0005, 0.0007, -0.0004, 0.0006];
     const autoSpeed = defaultSpeeds[index % defaultSpeeds.length];
     const obj = { group, mesh, clones, h, baseYPos: yPos, targetRotation: 0, currentAngle: 0, flatReferenceAngle: 0, autoSpeed }; 
     cylinders[index] = obj; return obj;

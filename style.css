@@ -49,6 +49,16 @@ textarea {
     /* 모바일 터치 하이라이트 제거 */
     -webkit-touch-callout: none;
     /* 모바일 롱터치 팝업 방지 */
+    outline: none !important;
+}
+
+*:focus,
+*:focus-visible,
+*:active,
+button:focus,
+button:active {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent !important;
 }
 
 html,

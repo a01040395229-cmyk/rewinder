@@ -764,15 +764,23 @@ function updateCylinderMorphs() {
 // --------------------------------------------------------------------------
 // 8. 3D/2D 메인 렌더링 프레임 루프 (animate)
 // --------------------------------------------------------------------------
-function animate() { 
+let lastTime = 0;
+
+function animate(time) { 
     requestAnimationFrame(animate); 
+
+    if (!time) time = performance.now();
+    let dt = time - lastTime;
+    lastTime = time;
+    if (dt > 100) dt = 16.666; // 프레임 스킵 방지 (탭 이동 등)
+    const timeScale = dt / 16.666;
 
     // 백그라운드 탭 또는 문서 숨김 시 렌더링 연산 일시정지 (스탠바이미 CPU/GPU 리소스 보호)
     if (document.hidden) return;
 
     // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션
     if (Math.abs(flattenProgress - targetFlattenProgress) > 0.0001) {
-        flattenProgress += (targetFlattenProgress - flattenProgress) * 0.08;
+        flattenProgress += (targetFlattenProgress - flattenProgress) * (1 - Math.pow(1 - 0.08, timeScale));
         updateCylinderMorphs();
     } else if (flattenProgress !== targetFlattenProgress) {
         flattenProgress = targetFlattenProgress;
@@ -783,15 +791,15 @@ function animate() {
 
     // 카메라 Z축 거리를 2D/3D 상태 및 줌 배율에 맞춰 보정
     if (camera) {
-        currentZoom += (targetZoom - currentZoom) * 0.1;
+        currentZoom += (targetZoom - currentZoom) * (1 - Math.pow(1 - 0.1, timeScale));
         const baseCamZ = 3.0 * (1 - t) + 3.2 * t;
         const targetCamZ = baseCamZ * currentZoom;
-        camera.position.z += (targetCamZ - camera.position.z) * 0.1;
+        camera.position.z += (targetCamZ - camera.position.z) * (1 - Math.pow(1 - 0.1, timeScale));
     }
 
     // 3D 실린더 자율 회전 (Auto-rotation) 카운트다운 및 처리
     if (pauseAutoDuration > 0) {
-        pauseAutoDuration -= 16;
+        pauseAutoDuration -= dt;
     }
 
     const isInfoPopupOpen = document.getElementById('info-popup') && document.getElementById('info-popup').style.display === 'flex';
@@ -804,15 +812,15 @@ function animate() {
         if (c.currentAngle === undefined) c.currentAngle = c.group.rotation.y;
 
         if (canAutoRotate && c && c.autoSpeed) {
-            // 자동 회전 시 lerp 지터 렉을 유발하지 않도록 각도를 직접 부드럽게 연속 가산
-            c.currentAngle += c.autoSpeed;
+            // 자동 회전 시 프레임 델타 타임(dt)을 적용하여 기기 스펙이나 환경에 상관없이 부드러운 회전 보장
+            c.currentAngle += c.autoSpeed * timeScale;
             // 2PI 모듈로 정규화로 오버플로우 및 float 오차 누적 방지
             const TWO_PI = Math.PI * 2;
             c.currentAngle = ((c.currentAngle % TWO_PI) + TWO_PI) % TWO_PI;
             c.targetRotation = c.currentAngle;
         } else {
             // 드래그/스냅 등 사용자 터치 인터랙션 시 lerp 보정
-            c.currentAngle += (c.targetRotation - c.currentAngle) * 0.12;
+            c.currentAngle += (c.targetRotation - c.currentAngle) * (1 - Math.pow(1 - 0.12, timeScale));
         }
 
         // 2D 펼침 시 크기 비율 확대 (1.05 ~ 1.35)
@@ -1187,7 +1195,7 @@ function onPointerMove(e) {
     
     if (isDragging && activeCylinderIndex !== -1) { 
         const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
-        if (dist > 5) {
+        if (dist > 20) {
             hasDragged = true;
         }
 
@@ -1211,7 +1219,7 @@ function onPointerUp(e) {
     }
     const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
     
-    if (!hasDragged && dist < 5 && activeCylinderIndex !== -1) {
+    if (!hasDragged && dist < 20 && activeCylinderIndex !== -1) {
         handleCylinderClick(e);
     }
     

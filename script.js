@@ -864,7 +864,7 @@ window.toggleFlatView = function() {
         cylinders.forEach(c => {
             if (c) {
                 c.targetRotation = Math.round((c.targetRotation || 0) / ROTATION_STEP) * ROTATION_STEP;
-                c.currentAngle = c.targetRotation;
+                // c.currentAngle = c.targetRotation; // Removed to prevent awkward instant snapping
             }
         });
     }

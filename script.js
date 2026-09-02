@@ -609,7 +609,7 @@ window.addEventListener('wheel', (e) => {
     
     if (targetCat !== -1 && cylinders[targetCat]) {
         const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-        const sensitivity = isFlatView ? 0.003 : 0.0035;
+        const sensitivity = isFlatView ? -0.0035 : 0.0035;
         cylinders[targetCat].targetRotation += delta * sensitivity;
         pauseAutoDuration = 3000;
     }
@@ -1257,7 +1257,7 @@ function onPointerMove(e) {
         }
 
         if (hasDragged) {
-            const sensitivity = isFlatView ? 0.0035 : 0.004;
+            const sensitivity = isFlatView ? -0.004 : 0.004;
             const deltaX = e.clientX - dragStartX;
             const deltaRot = deltaX * sensitivity;
 
@@ -1402,7 +1402,7 @@ window.updateTopCarousel = () => {
             ${s.name}
         </div>`).join(''); 
     
-    const copies = 50;
+    const copies = 15;
     list.innerHTML = baseHTML.repeat(copies);
     
     if (!container.dataset.scrollInited) {
@@ -1414,7 +1414,7 @@ window.updateTopCarousel = () => {
             const groupHeight = (itemHeight + gap) * STYLE_SETS.length;
             const middleScroll = groupHeight * Math.floor(copies / 2);
             
-            if (container.scrollTop < groupHeight * 5 || container.scrollTop > groupHeight * (copies - 5)) {
+            if (container.scrollTop < groupHeight * 3 || container.scrollTop > groupHeight * (copies - 3)) {
                 const currentOffsetInGroup = container.scrollTop % groupHeight;
                 container.scrollTop = middleScroll + currentOffsetInGroup;
             }
@@ -1525,22 +1525,24 @@ function updateActiveSideStyle() {
     const items = container.querySelectorAll('.side-style-item');
     if (!items.length) return;
     
-    const containerCenter = container.getBoundingClientRect().top + container.clientHeight / 2;
-    let closestItem = null;
-    let minDistance = Infinity;
+    const itemHeight = items[0].offsetHeight || 0;
+    const gap = 12;
+    const fullItemHeight = itemHeight + gap;
+    if (fullItemHeight === 0) return;
     
-    items.forEach(item => {
-        const itemCenter = item.getBoundingClientRect().top + item.clientHeight / 2;
-        const distance = Math.abs(containerCenter - itemCenter);
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestItem = item;
-        }
-    });
+    const centerScrollY = container.scrollTop + container.clientHeight / 2;
+    let closestIndex = Math.round((centerScrollY - itemHeight / 2) / fullItemHeight);
     
-    items.forEach(item => item.classList.remove('active'));
+    if (closestIndex < 0) closestIndex = 0;
+    if (closestIndex >= items.length) closestIndex = items.length - 1;
+    
+    const closestItem = items[closestIndex];
     if (closestItem) {
-        closestItem.classList.add('active');
+        const currentActive = container.querySelector('.side-style-item.active');
+        if (currentActive !== closestItem) {
+            if (currentActive) currentActive.classList.remove('active');
+            closestItem.classList.add('active');
+        }
     }
 }
 

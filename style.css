@@ -1382,3 +1382,6 @@ textarea,
     transform: scale(1.05);
     filter: brightness(0.95);
 }
+canvas {
+    touch-action: none !important;
+}

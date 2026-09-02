@@ -194,27 +194,6 @@ h3 {
     max-width: calc(100vw - 80px);
 }
 
-#side-style-wrapper::before,
-#side-style-wrapper::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 40px;
-    pointer-events: none;
-    z-index: 10;
-}
-
-#side-style-wrapper::before {
-    top: 36px;
-    background: linear-gradient(to bottom, rgba(5, 5, 5, 0.95), transparent);
-}
-
-#side-style-wrapper::after {
-    bottom: 0;
-    background: linear-gradient(to top, rgba(5, 5, 5, 0.95), transparent);
-}
-
 .side-style-header {
     font-family: var(--font-display);
     font-size: 1.5rem;
@@ -225,19 +204,19 @@ h3 {
     text-transform: uppercase;
 }
 
-/* 수직 스크롤 휠 컨테이너 */
+/* 수직 스크롤 휠 컨테이너 (그라데이션 마스크 및 휠 휠 효과) */
 .side-style-container {
     height: 220px;
     overflow-y: auto;
     scroll-snap-type: y mandatory;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
     padding: 70px 20px 70px 0;
     cursor: grab;
     touch-action: none;
     max-width: 100%;
-    transform: translateZ(0);
-    will-change: transform, scroll-position;
 }
 
 .side-style-container::-webkit-scrollbar {
@@ -250,7 +229,6 @@ h3 {
     gap: 12px;
     position: relative;
     width: max-content;
-    transform: translateZ(0);
 }
 
 .side-style-item {
@@ -1403,4 +1381,26 @@ textarea,
 .btn-white:hover {
     transform: scale(1.05);
     filter: brightness(0.95);
+}
+
+/* --------------------------------------------------------------------------
+   15. 스탠바이미 렌더링 성능 최적화 (GPU Layer & CSS Containment)
+   -------------------------------------------------------------------------- */
+#side-style-container {
+    will-change: scroll-position;
+    contain: content;
+}
+
+.side-style-item {
+    contain: layout style paint;
+    transform: translateZ(0);
+}
+
+.thumbnail-grid {
+    will-change: scroll-position;
+    contain: content;
+}
+
+#canvas-container canvas {
+    transform: translateZ(0);
 }

@@ -34,9 +34,6 @@ let hoveredCylinderIndex = -1;
 let lastInteractionTime = 0; 
 let pauseAutoDuration = 0; // 마우스가 이미지 위에 올랐을 때 자동 회전을 즉시 일시정지하는 타이머
 let pointerStartTime = 0, pointerStartPos = { x: 0, y: 0 }; 
-let isInfoPopupOpen = false; // 전역 팝업 열림 상태 (DOM 조회 최소화)
-let cachedInteractableMeshes = null; // Raycasting 대상 메시 캐시
-let lastHoverRaycastTime = 0; // 호버 Raycasting 스로틀 타임스탬프 
 
 // 원통 배치 및 회전 정밀도 파라미터
 const ITEM_COUNT = 20;                             // 원통 1개당 배치되는 패션 아이템 슬롯 개수 (20개)
@@ -704,8 +701,8 @@ async function loadEverything() {
     
     // 원통 텍스처 및 각도 데이터 적용
     const currentRots = dataToLoad.rotations || [];
+    await Promise.all(CATEGORIES.map((_, i) => updateCylinderTexture(i)));
     for (let i = 0; i < CATEGORIES.length; i++) {
-        await updateCylinderTexture(i);
         if (currentRots[i] !== undefined) {
             cylinders[i].targetRotation = currentRots[i];
             cylinders[i].currentAngle = currentRots[i];
@@ -776,6 +773,7 @@ function animate(time) {
         pauseAutoDuration -= dt;
     }
 
+    const isInfoPopupOpen = document.getElementById('info-popup') && document.getElementById('info-popup').style.display === 'flex';
     const canAutoRotate = !isDragging && !isHovering && pauseAutoDuration <= 0 && !isInfoPopupOpen;
 
     const L = Math.PI * 2 * CYLINDER_RADIUS;
@@ -817,9 +815,10 @@ function animate(time) {
         c.mesh.rotation.y = (- (ROTATION_STEP / 2)) * (1 - t);
 
         if (c.clones) {
+            const isVisible = t > 0.01;
             c.clones.forEach(clone => {
-                clone.rotation.y = c.mesh.rotation.y;
-                clone.visible = t > 0.01;
+                if (isVisible) clone.rotation.y = c.mesh.rotation.y;
+                if (clone.visible !== isVisible) clone.visible = isVisible;
             });
         }
     }); 
@@ -978,9 +977,7 @@ async function createCylinderMesh(index) {
     const defaultSpeeds = [0.0006, -0.0005, 0.0007, -0.0004, 0.0006];
     const autoSpeed = defaultSpeeds[index % defaultSpeeds.length];
     const obj = { group, mesh, clones, h, baseYPos: yPos, targetRotation: 0, currentAngle: 0, flatReferenceAngle: 0, autoSpeed }; 
-    cylinders[index] = obj;
-    cachedInteractableMeshes = null; // 메시 목록 캐시 갱신
-    return obj;
+    cylinders[index] = obj; return obj;
 }
 
 // WebGL 캔버스 오염(Tainted Canvas) 방지 검증 함수
@@ -1048,8 +1045,8 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    // 1080p 화면 전용 1:1 픽셀 매핑 최적 해상도 (2048px) - GPU VRAM 사용량 75% 절감 및 텍스처 가속
-    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(2048, renderer.capabilities.maxTextureSize) : 2048;
+    // 1080p 화면 전용 1:1 픽셀 매핑 최적 해상도 향상 (4096px) - 과도한 부하 없이 선명도 개선
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
     const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
@@ -1162,17 +1159,15 @@ function onPointerDown(e) {
 }
 
 function getAllInteractableMeshes() {
-    if (cachedInteractableMeshes) return cachedInteractableMeshes;
     const list = [];
     cylinders.forEach(c => {
         if (c.mesh) list.push(c.mesh);
         if (c.clones) {
             c.clones.forEach(clone => {
-                list.push(clone);
+                if (clone.visible) list.push(clone);
             });
         }
     });
-    cachedInteractableMeshes = list;
     return list;
 }
 
@@ -1180,18 +1175,39 @@ function findCategoryIndexByMesh(mesh) {
     return cylinders.findIndex(c => c.mesh === mesh || (c.clones && c.clones.includes(mesh)));
 }
 
-function onPointerMove(e) { 
+const sharedPointerVec = new THREE.Vector2();
+const sharedRaycaster = new THREE.Raycaster();
+let hoverRafPending = false;
+let lastPointerEvent = null;
+
+function performHoverCheck(e) {
+    if (!camera || isDragging) return;
     if (e.target.closest('#management-panel, #side-style-wrapper, #instruction-overlay, #info-popup, .controls, #audio-control-btn, .ui-overlay, #management-btn-wrapper')) {
         isHovering = false; 
         hoveredCylinderIndex = -1;
         document.body.style.cursor = 'default';
         return;
     }
+    sharedPointerVec.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    sharedRaycaster.setFromCamera(sharedPointerVec, camera);
+    const intersects = sharedRaycaster.intersectObjects(getAllInteractableMeshes());
     
-    // 1. 드래그 중인 경우 Raycasting을 100% 건너뛰고 드래그 위치만 즉시 반영 (터치 렉 완전 차단)
+    if (intersects.length > 0) {
+        isHovering = true;
+        const catId = findCategoryIndexByMesh(intersects[0].object);
+        hoveredCylinderIndex = catId;
+        document.body.style.cursor = 'default';
+    } else { 
+        isHovering = false; 
+        hoveredCylinderIndex = -1;
+        document.body.style.cursor = 'default'; 
+    }
+}
+
+function onPointerMove(e) { 
     if (isDragging && activeCylinderIndex !== -1) { 
         const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
-        if (dist > 15) {
+        if (dist > 40) {
             hasDragged = true;
         }
 
@@ -1200,32 +1216,20 @@ function onPointerMove(e) {
             const deltaX = e.clientX - dragStartX;
             const deltaRot = deltaX * sensitivity;
 
+            // 클릭하여 드래그한 카테고리만 독립 회전
             cylinders[activeCylinderIndex].targetRotation = dragStartRotation + deltaRot; 
         }
-        document.body.style.cursor = 'default';
-        return; 
+        document.body.style.cursor = 'default'; 
+        return;
     }
 
-    // 2. 터치 기기(pointerType === 'touch')는 호버 개념이 없으므로 Raycasting 연산 완전 생략
-    if (e.pointerType === 'touch') return;
-
-    // 3. 마우스 이동 시 호버 Raycasting 스로틀링 (30ms 간격 제한)
-    const now = performance.now();
-    if (now - lastHoverRaycastTime < 30) return;
-    lastHoverRaycastTime = now;
-
-    const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
-    const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
-    const intersects = r.intersectObjects(getAllInteractableMeshes());
-    
-    if (intersects.length > 0) {
-        isHovering = true; const catId = findCategoryIndexByMesh(intersects[0].object);
-        hoveredCylinderIndex = catId;
-        document.body.style.cursor = 'default';
-    } else { 
-        isHovering = false; 
-        hoveredCylinderIndex = -1;
-        document.body.style.cursor = 'default'; 
+    lastPointerEvent = e;
+    if (!hoverRafPending) {
+        hoverRafPending = true;
+        requestAnimationFrame(() => {
+            hoverRafPending = false;
+            if (lastPointerEvent) performHoverCheck(lastPointerEvent);
+        });
     }
 }
 
@@ -1458,28 +1462,45 @@ function initSideWheelDrag() {
 }
 
 
-let lastActiveSideItem = null;
+let activeSideItemEl = null;
 
 function updateActiveSideStyle() {
     const container = document.getElementById('side-style-container');
-    const list = document.getElementById('side-style-list');
-    if (!container || !list || !list.children.length) return;
-    
-    const firstItem = list.children[0];
-    const itemH = firstItem.offsetHeight || 30;
-    const gap = 12; 
-    const step = itemH + gap;
-    const padding = 70;
+    if (!container) return;
+    const list = container.firstElementChild;
+    if (!list || !list.children.length) return;
 
-    const centerOffset = container.scrollTop + (container.clientHeight / 2) - padding;
-    let targetIdx = Math.round((centerOffset - itemH / 2) / step);
-    targetIdx = Math.max(0, Math.min(list.children.length - 1, targetIdx));
+    const items = list.children;
+    const containerHeight = container.clientHeight;
+    const containerCenterY = container.scrollTop + containerHeight / 2;
 
-    const activeItem = list.children[targetIdx];
-    if (activeItem !== lastActiveSideItem) {
-        if (lastActiveSideItem) lastActiveSideItem.classList.remove('active');
-        if (activeItem) activeItem.classList.add('active');
-        lastActiveSideItem = activeItem;
+    const firstItem = items[0];
+    const itemHeight = firstItem.offsetHeight;
+    if (!itemHeight) return;
+
+    const gap = 12;
+    const step = itemHeight + gap;
+    const approxIdx = Math.floor(containerCenterY / step);
+    const startIdx = Math.max(0, approxIdx - 3);
+    const endIdx = Math.min(items.length - 1, approxIdx + 3);
+
+    let closestItem = null;
+    let minDistance = Infinity;
+
+    for (let i = startIdx; i <= endIdx; i++) {
+        const item = items[i];
+        const itemCenter = item.offsetTop + itemHeight / 2;
+        const distance = Math.abs(containerCenterY - itemCenter);
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestItem = item;
+        }
+    }
+
+    if (closestItem && closestItem !== activeSideItemEl) {
+        if (activeSideItemEl) activeSideItemEl.classList.remove('active');
+        closestItem.classList.add('active');
+        activeSideItemEl = closestItem;
     }
 }
 
@@ -1978,10 +1999,9 @@ window.saveToShareableFile = async () => {
 
 window.deleteStyleSet = (id) => { if(STYLE_SETS.length <= 1) return; STYLE_SETS = STYLE_SETS.filter(x => x.id !== id); saveState(); createUI(); };
 
-let saveStateTimer = null;
-
 function saveState() { 
     if (isLocked) return; 
+    saveStateToIDB(); 
     if (window.EMBEDDED_DATA) {
         window.EMBEDDED_DATA.categories = CATEGORIES;
         window.EMBEDDED_DATA.sets = STYLE_SETS;
@@ -1997,17 +2017,11 @@ function saveState() {
     } catch (e) {
         console.warn("LocalStorage save error for fm_rots:", e);
     }
-
-    // Heavy image IndexedDB & LocalStorage save is debounced to avoid UI drag release stutter
-    if (saveStateTimer) clearTimeout(saveStateTimer);
-    saveStateTimer = setTimeout(() => {
-        saveStateToIDB(); 
-        try { 
-            localStorage.setItem('fm_imgs', JSON.stringify(CATEGORIES)); 
-        } catch (e) { 
-            console.warn("LocalStorage quota exceeded for fm_imgs, relying on IndexedDB:", e); 
-        } 
-    }, 500);
+    try { 
+        localStorage.setItem('fm_imgs', JSON.stringify(CATEGORIES)); 
+    } catch (e) { 
+        console.warn("LocalStorage quota exceeded for fm_imgs, relying on IndexedDB:", e); 
+    } 
 }
 
 // --------------------------------------------------------------------------
@@ -2038,11 +2052,9 @@ window.showInfoPopup = (catId, idx) => {
         buyOverlay.style.display = 'none';
     }
     
-    isInfoPopupOpen = true;
     document.getElementById('info-popup').style.display = 'flex'; 
 };
 window.closeInfoPopup = () => {
-    isInfoPopupOpen = false;
     document.getElementById('info-popup').style.display = 'none';
     lastInteractionTime = Date.now();
     pauseAutoDuration = 0;

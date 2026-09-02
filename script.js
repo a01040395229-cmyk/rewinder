@@ -1193,15 +1193,12 @@ function findCategoryIndexByMesh(mesh) {
 }
 
 function onPointerMove(e) { 
-    const hint = document.getElementById('info-hint');
     if (e.target.closest('#management-panel, #side-style-wrapper, #instruction-overlay, #info-popup, .controls, #audio-control-btn, .ui-overlay, #management-btn-wrapper')) {
         isHovering = false; 
         hoveredCylinderIndex = -1;
-        if (hint) hint.style.display = 'none'; 
         document.body.style.cursor = 'default';
         return;
     }
-    if (hint) { hint.style.left = e.clientX + 'px'; hint.style.top = e.clientY + 'px'; }
     const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
     const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
     const intersects = r.intersectObjects(getAllInteractableMeshes());
@@ -1209,15 +1206,11 @@ function onPointerMove(e) {
     if (intersects.length > 0) {
         isHovering = true; const catId = findCategoryIndexByMesh(intersects[0].object);
         hoveredCylinderIndex = catId;
-        const rawUvIdx = Math.floor(intersects[0].uv.x * ITEM_COUNT);
-        const items = CATEGORIES[catId]?.items || [];
-        const uvIdx = items.length > 0 ? rawUvIdx % items.length : rawUvIdx;
-        if (catId !== -1 && items[uvIdx]) { if(hint) hint.style.display = 'block'; document.body.style.cursor = 'pointer'; }
-        else { if(hint) hint.style.display = 'none'; document.body.style.cursor = 'grab'; }
+        document.body.style.cursor = 'default';
     } else { 
         isHovering = false; 
         hoveredCylinderIndex = -1;
-        if(hint) hint.style.display = 'none'; document.body.style.cursor = 'default'; 
+        document.body.style.cursor = 'default'; 
     }
     
     if (isDragging && activeCylinderIndex !== -1) { 
@@ -1227,7 +1220,7 @@ function onPointerMove(e) {
 
         // 클릭하여 드래그한 카테고리만 독립 회전
         cylinders[activeCylinderIndex].targetRotation = dragStartRotation + deltaRot; 
-        document.body.style.cursor = 'grabbing'; 
+        document.body.style.cursor = 'default'; 
     }
 }
 
@@ -1263,6 +1256,25 @@ function handleCylinderClick(e) {
 // --------------------------------------------------------------------------
 // 12. 좌측 수직 스타일 선택 휠 UI 업데이트 및 드래그/스크롤 제어
 // --------------------------------------------------------------------------
+window.switchArchiveTab = (tabName) => {
+    const catContent = document.getElementById('tab-content-category');
+    const setContent = document.getElementById('tab-content-styleset');
+    const catBtn = document.getElementById('tab-btn-category');
+    const setBtn = document.getElementById('tab-btn-styleset');
+    
+    if (tabName === 'category') {
+        if (catContent) catContent.style.display = 'block';
+        if (setContent) setContent.style.display = 'none';
+        if (catBtn) catBtn.classList.add('active');
+        if (setBtn) setBtn.classList.remove('active');
+    } else {
+        if (catContent) catContent.style.display = 'none';
+        if (setContent) setContent.style.display = 'block';
+        if (catBtn) catBtn.classList.remove('active');
+        if (setBtn) setBtn.classList.add('active');
+    }
+};
+
 window.togglePanel = (e) => { 
     if (e && e.stopPropagation) e.stopPropagation(); 
     const p = document.getElementById('management-panel'); 
@@ -1271,6 +1283,8 @@ window.togglePanel = (e) => {
         p.style.display = 'block';
     } else {
         p.style.display = 'none';
+        pauseAutoDuration = 0;
+        isHovering = false;
     }
 };
 window.addEventListener('pointerdown', (e) => {
@@ -1278,6 +1292,20 @@ window.addEventListener('pointerdown', (e) => {
     if (p && p.style.display === 'block') {
         if (!e.target.closest('#management-panel') && !e.target.closest('#management-btn-wrapper') && !e.target.closest('[onclick*="togglePanel"]')) {
             p.style.display = 'none';
+            pauseAutoDuration = 0;
+            isHovering = false;
+        }
+    }
+    const infoPopup = document.getElementById('info-popup');
+    if (infoPopup && (infoPopup.style.display === 'flex' || infoPopup.style.display === 'block')) {
+        if (!e.target.closest('.info-card')) {
+            closeInfoPopup();
+        }
+    }
+    const instOverlay = document.getElementById('instruction-overlay');
+    if (instOverlay && (instOverlay.style.display === 'flex' || instOverlay.style.display === 'block')) {
+        if (!e.target.closest('.instruction-card')) {
+            closeInstructions();
         }
     }
 });
@@ -1293,8 +1321,7 @@ window.updateTopCarousel = () => {
 
     const baseHTML = STYLE_SETS.map((s, idx) => `
         <div class="side-style-item" 
-             data-id="${s.id}" data-idx="${idx}"
-             onclick="window.applyStyleSet(${s.id}, this)">
+             data-id="${s.id}" data-idx="${idx}">
             ${s.name}
         </div>`).join(''); 
     
@@ -1355,8 +1382,13 @@ function initSideWheelDrag() {
     if (!container || container.dataset.dragInited) return;
     container.dataset.dragInited = "true";
 
+    // Use capture phase to prevent click on dragged items
     container.addEventListener('click', (e) => {
-        if (isSideWheelDragMoved) return;
+        if (isSideWheelDragMoved) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
         const item = e.target.closest('.side-style-item');
         if (item) {
             const setId = parseInt(item.getAttribute('data-id'), 10);
@@ -1365,7 +1397,7 @@ function initSideWheelDrag() {
                 item.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
         }
-    });
+    }, true);
 
     container.addEventListener('pointerdown', (e) => {
         isSideWheelDragging = true;
@@ -1373,21 +1405,27 @@ function initSideWheelDrag() {
         sideWheelStartY = e.clientY;
         sideWheelStartScrollTop = container.scrollTop;
         container.style.cursor = 'grabbing';
+        // Disable scroll snap while dragging for smooth movement
+        container.style.scrollSnapType = 'none';
     });
 
     window.addEventListener('pointermove', (e) => {
         if (!isSideWheelDragging) return;
         const deltaY = e.clientY - sideWheelStartY;
-        if (Math.abs(deltaY) > 15) {
+        if (Math.abs(deltaY) > 5) {
             isSideWheelDragMoved = true;
         }
         container.scrollTop = sideWheelStartScrollTop - deltaY;
     });
 
-    const endDrag = () => {
+    const endDrag = (e) => {
         if (!isSideWheelDragging) return;
         isSideWheelDragging = false;
         container.style.cursor = 'grab';
+        
+        // Re-enable scroll snap
+        container.style.scrollSnapType = 'y mandatory';
+
         if (isSideWheelDragMoved) {
             updateActiveSideStyle();
             const activeItem = container.querySelector('.side-style-item.active');
@@ -1598,6 +1636,29 @@ window.showSetReference = () => {
     document.getElementById('info-category').innerText = "STYLE CONCEPT";
     document.getElementById('info-title').innerText = set.name;
     document.getElementById('info-desc').innerText = "이 스타일 조합에 대한 오피셜 룩북 이미지입니다.";
+    const linkBtn = document.getElementById('info-link');
+    const imgLink = document.getElementById('info-img-link');
+    const buyOverlay = document.getElementById('info-buy-overlay');
+    if (linkBtn) linkBtn.style.display = 'none';
+    if (imgLink) { imgLink.removeAttribute('href'); imgLink.style.pointerEvents = 'none'; }
+    if (buyOverlay) buyOverlay.style.display = 'none';
+    document.getElementById('info-popup').style.display = 'flex';
+};
+
+window.showSetThumbnailPreview = (setId) => {
+    const set = STYLE_SETS.find(s => s.id === setId);
+    if (!set || !set.repUrl) return;
+    
+    document.getElementById('info-img').src = set.repUrl;
+    document.getElementById('info-category').innerText = "STYLE LOOKBOOK";
+    document.getElementById('info-title').innerText = set.name;
+    document.getElementById('info-desc').innerText = "이 스타일 조합에 대한 오피셜 룩북 이미지입니다.";
+    const linkBtn = document.getElementById('info-link');
+    const imgLink = document.getElementById('info-img-link');
+    const buyOverlay = document.getElementById('info-buy-overlay');
+    if (linkBtn) linkBtn.style.display = 'none';
+    if (imgLink) { imgLink.removeAttribute('href'); imgLink.style.pointerEvents = 'none'; }
+    if (buyOverlay) buyOverlay.style.display = 'none';
     document.getElementById('info-popup').style.display = 'flex';
 };
 
@@ -1605,9 +1666,13 @@ window.handleSetDragStart = (e, idx) => {
     e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'set', idx }));
     e.target.classList.add('opacity-40');
 };
+window.handleSetDragEnd = (e) => {
+    document.querySelectorAll('.set-item-row').forEach(el => el.classList.remove('opacity-40'));
+};
 window.handleSetDragOver = (e) => e.preventDefault();
 window.handleSetDrop = (e, targetIdx) => {
     e.preventDefault();
+    document.querySelectorAll('.set-item-row').forEach(el => el.classList.remove('opacity-40'));
     const data = JSON.parse(e.dataTransfer.getData('text/plain'));
     if (data.type !== 'set' || data.idx === targetIdx) return;
     const [moved] = STYLE_SETS.splice(data.idx, 1);
@@ -1670,17 +1735,39 @@ function createUI() {
     }).join('');
 
     document.getElementById('set-settings-list').innerHTML = STYLE_SETS.map((s, i) => `
-        <div class="set-item-row" draggable="true" ondragstart="handleSetDragStart(event, ${i})" ondragover="handleSetDragOver(event)" ondrop="handleSetDrop(event, ${i})">
-            <div class="flex flex-col gap-1">
-                <input type="text" value="${s.name}" onchange="renameStyleSet(${s.id}, this.value)" class="set-name-edit">
-                <label class="text-[8px] text-blue-400 cursor-pointer hover:underline">
-                    ${s.repUrl ? '● 이미지 등록됨' : '○ 이미지 업로드'}
-                    <input type="file" class="hidden" onchange="uploadSetReferenceImage(${s.id}, event)">
-                </label>
+        <div class="set-item-row" draggable="true" 
+             ondragstart="handleSetDragStart(event, ${i})" 
+             ondragend="handleSetDragEnd(event)" 
+             ondragover="handleSetDragOver(event)" 
+             ondrop="handleSetDrop(event, ${i})">
+            <div class="set-thumb-preview ${s.repUrl ? 'has-img' : ''}" 
+                 onclick="${s.repUrl ? `showSetThumbnailPreview(${s.id})` : ''}" 
+                 title="${s.repUrl ? '룩북 이미지 크게 보기' : '이미지 없음'}">
+                ${s.repUrl ? `<img src="${s.repUrl}" alt="${s.name}">` : `
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                    </svg>
+                `}
             </div>
-            <div class="set-action-btns">
-                <button onclick="saveCurrentToSet(${s.id})" class="set-mini-btn btn-save">SAVE</button>
-                <button onclick="deleteStyleSet(${s.id})" class="set-mini-btn btn-delete">DEL</button>
+            <div class="flex flex-col justify-between self-stretch py-1 gap-2 flex-1 min-w-0">
+                <div>
+                    <input type="text" value="${s.name}" onchange="renameStyleSet(${s.id}, this.value)" class="set-name-edit" placeholder="STYLE NAME">
+                    <div class="text-[10px] font-bold mt-1 ${s.repUrl ? 'text-indigo-600' : 'text-slate-400'}">
+                        ${s.repUrl ? '● 이미지 등록됨' : '○ 이미지 없음'}
+                    </div>
+                </div>
+                <div class="set-action-btns">
+                    <label class="set-mini-btn btn-image-upload ${s.repUrl ? 'has-img' : ''}" title="스타일 대표 화보 이미지 선택/변경">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <input type="file" accept="image/*" class="hidden" onchange="uploadSetReferenceImage(${s.id}, event)">
+                    </label>
+                    <button onclick="deleteStyleSet(${s.id})" class="set-mini-btn btn-delete" title="스타일 세트 삭제">DEL</button>
+                </div>
             </div>
         </div>`).join('');
     updateTopCarousel();
@@ -1815,14 +1902,14 @@ window.saveToShareableFile = async () => {
         html = html.replace(/<div id="loading-screen"[\s\S]*?>/, '<div id="loading-screen">');
 
         // 5. 전시 안내(Guide) 오버레이 복원
-        html = html.replace(/<div id="instruction-overlay"[\s\S]*?>/, '<div id="instruction-overlay">');
+        html = html.replace(/<div id="instruction-overlay"[\s\S]*?>/, '<div id="instruction-overlay" onclick="if(event.target === this) closeInstructions()">');
 
         // 6. GALLERY 관리자 패널(management-panel) 닫힌 상태로 복원
         html = html.replace(/<div id="management-panel"[\s\S]*?>/, '<div id="management-panel" class="" style="display: none;">');
 
         // 7. 토스트 메세지 팝업박스 및 정보 팝업 초기화 (내보내기 토스트 팝업 텍스트 제거)
         html = html.replace(/<div id="message-box"[\s\S]*?<\/div>/, '<div id="message-box"></div>');
-        html = html.replace(/<div id="info-popup"[\s\S]*?>/, '<div id="info-popup" style="display: none;">');
+        html = html.replace(/<div id="info-popup"[\s\S]*?>/, '<div id="info-popup" style="display: none;" onclick="if(event.target === this) closeInfoPopup()">');
         
         const escapedData = JSON.stringify(sessionData).replace(/</g, '\\u003c');
         const dataScript = `\n<script>window.EMBEDDED_DATA = ${escapedData};<\/script>\n`;
@@ -1906,7 +1993,9 @@ window.showInfoPopup = (catId, idx) => {
 window.closeInfoPopup = () => {
     document.getElementById('info-popup').style.display = 'none';
     lastInteractionTime = Date.now();
-    pauseAutoDuration = 5000;
+    pauseAutoDuration = 0;
+    isHovering = false;
+    isDragging = false;
 };
 window.randomize = () => { 
     lastInteractionTime = Date.now(); 
@@ -1987,6 +2076,7 @@ function playAudio() {
     const audio = document.getElementById('bgm-audio');
     if (!audio) return;
     
+    audio.volume = 0.5;
     audio.muted = isMuted;
     const playPromise = audio.play();
     if (playPromise !== undefined) {
@@ -2027,6 +2117,7 @@ function initAudio() {
     const audio = document.getElementById('bgm-audio');
     if (!audio) return;
     
+    audio.volume = 0.5;
     // 1. 바로 재생 시도 (브라우저 자동재생 허용 시 즉시 실행)
     playAudio();
 
@@ -2085,6 +2176,9 @@ window.closeInstructions = () => {
     if (!audioInitialized) {
         playAudio();
     }
+    pauseAutoDuration = 0;
+    isHovering = false;
+    isDragging = false;
 };
 window.showInstructions = () => { const o = document.getElementById('instruction-overlay'); if (o) { o.style.display = 'flex'; setTimeout(() => o.style.opacity = '1', 10); } };
 

@@ -23,7 +23,7 @@
     <audio id="bgm-audio" src="BGM.mp3" preload="auto" loop=""></audio>
 
     <!-- Brand UI Overlay (Top Left Header Title & Logo) -->
-    <div class="ui-overlay" onclick="showInstructions()" style="cursor: pointer;">
+    <div class="ui-overlay">
         <img src="Korean Fashion Archive.svg" alt="Korean Fashion Archive" style="display: block; width: 180px; height: auto; margin-bottom: 15px;">
         <svg class="title-svg-interactive" width="280" height="31" viewBox="0 0 482 53" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; height: auto;">
             <!-- R -->
@@ -73,41 +73,6 @@
         <div class="splash-debug-log" id="debug-log"></div>
     </div>
 
-    <!-- Exhibition Instruction Overlay -->
-    <div id="instruction-overlay">
-        <div class="instruction-card">
-            <h1 class="text-3xl font-black mb-8 tracking-wider interactive-hover-title"><span class="title-hover-letter">S</span><span class="title-hover-letter">t</span><span class="title-hover-letter">y</span><span class="title-hover-letter">l</span><span class="title-hover-letter">e</span> <span class="title-hover-letter">R</span><span class="title-hover-letter">e</span><span class="title-hover-letter">w</span><span class="title-hover-letter">i</span><span class="title-hover-letter">n</span><span class="title-hover-letter">d</span><span class="title-hover-letter">e</span><span class="title-hover-letter">r</span><span class="title-hover-letter">E</span><span class="title-hover-letter">X</span><span class="title-hover-letter">H</span><span class="title-hover-letter">I</span><span class="title-hover-letter">B</span><span class="title-hover-letter">I</span><span class="title-hover-letter">T</span><span class="title-hover-letter">I</span><span class="title-hover-letter">O</span><span class="title-hover-letter">N</span> <span class="title-hover-letter">G</span><span class="title-hover-letter">U</span><span class="title-hover-letter">I</span><span class="title-hover-letter">D</span><span class="title-hover-letter">E</span></h1>
-            
-            <div class="flex flex-col gap-6 text-left mb-10 text-sm">
-                <div class="flex items-center gap-4">
-                    <div class="step-icon">1</div>
-                    <div>
-                        <div class="font-black text-white text-base">원통 회전 &amp; 조합</div>
-                        <div class="text-xs opacity-70">마우스 드래그로 각 부위별 옷을 회전시켜 패션을 조합하세요.</div>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-4">
-                    <div class="step-icon">2</div>
-                    <div>
-                        <div class="font-black text-white text-base">룩북 &amp; 2D 보기</div>
-                        <div class="text-xs opacity-70">좌측 휠에서 룩북 세트를 클릭하거나 FLAT 버튼으로 펼쳐보세요.</div>
-                    </div>
-                </div>
-
-                <div class="flex items-center gap-4">
-                    <div class="step-icon">3</div>
-                    <div>
-                        <div class="font-black text-white text-base">아이템 상세 정보</div>
-                        <div class="text-xs opacity-70">원통의 아이템을 클릭하면 화보 및 구매 링크를 확인하실 수 있습니다.</div>
-                    </div>
-                </div>
-            </div>
-
-            <button onclick="closeInstructions()" class="btn-white w-full py-4 text-base font-black tracking-widest shadow-2xl">체험 시작하기</button>
-        </div>
-    </div>
-
     <!-- Vignette Darkening Overlay -->
     <div id="vignette-overlay"></div>
 
@@ -122,17 +87,8 @@
     <!-- Left Center Vertical Style Selector Wheel -->
     <div id="side-style-wrapper">
         <div class="side-style-header">STYLE</div>
-        <div class="side-style-container" id="side-style-container" data-drag-inited="true">
-            <div class="side-style-list" id="side-style-list">
-        <div class="side-style-item" data-id="1" data-idx="0" onclick="window.applyStyleSet(1, 0)">
-            모나미룩
-        </div>
-        <div class="side-style-item active" data-id="2" data-idx="1" onclick="window.applyStyleSet(2, 1)">
-            등골브레이커룩
-        </div>
-        <div class="side-style-item" data-id="3" data-idx="2" onclick="window.applyStyleSet(3, 2)">
-            아메카지룩
-        </div></div>
+        <div class="side-style-container" id="side-style-container">
+            <div class="side-style-list" id="side-style-list"></div>
         </div>
     </div>
 
@@ -148,6 +104,13 @@
                 <h2 class="archive-title">ARCHIVE STUDIO</h2>
                 <div class="text-[10px] font-extrabold text-slate-400" id="storage-status"><span class="text-green-500 font-black">● 내장됨</span></div>
             </div>
+
+            <!-- Tab Navigation Menu Buttons -->
+            <div class="archive-tabs-container">
+                <button id="tab-btn-category" class="archive-tab-btn active" onclick="switchArchiveTab('category')">CATEGORY</button>
+                <button id="tab-btn-styleset" class="archive-tab-btn" onclick="switchArchiveTab('styleset')">STYLE SET</button>
+            </div>
+
             <div class="archive-header-actions">
                 <button class="archive-icon-btn" onclick="saveToShareableFile()" title="내보내기 (HTML)">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -166,10 +129,18 @@
         </div>
 
         <div class="archive-scroll-area">
-            <div id="category-controls"></div>
-            <div class="mt-8 pt-6 border-t border-slate-300">
-                <div class="flex justify-between items-center mb-3">
-                    <span class="font-black text-xs text-slate-800 uppercase tracking-wider">STYLE SET LOOKBOOK</span>
+            <!-- 1. Category Tab Page -->
+            <div id="tab-content-category" class="archive-tab-content">
+                <div id="category-controls"></div>
+            </div>
+
+            <!-- 2. Style Set Tab Page -->
+            <div id="tab-content-styleset" class="archive-tab-content" style="display: none;">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <span class="font-black text-xs text-slate-800 uppercase tracking-wider">STYLE SET LOOKBOOK</span>
+                        <p class="text-[10px] text-slate-500 mt-0.5">스타일 세트별 대표 화보 이미지 및 순서를 관리합니다.</p>
+                    </div>
                     <button onclick="addStyleSet()" class="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors">+ NEW SET</button>
                 </div>
                 <div id="set-settings-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
@@ -185,7 +156,7 @@
     </div>
 
     <!-- Info Popup Modal -->
-    <div id="info-popup" style="display: none;">
+    <div id="info-popup" style="display: none;" onclick="if(event.target === this) closeInfoPopup()">
         <div class="info-card">
             <div class="close-info" onclick="closeInfoPopup()">×</div>
             <a id="info-img-link" target="_blank" class="popup-image-container">
@@ -205,8 +176,6 @@
         </div>
     </div>
 
-    <!-- Hover Tooltip Hint -->
-    <div id="info-hint" style="left: 863.512px; top: 580.297px; display: none;">눌러보세요!</div>
 
     <!-- Toast Notification Message Box -->
     <div id="message-box"></div>

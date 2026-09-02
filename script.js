@@ -514,8 +514,8 @@ async function init() {
         camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000); 
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
-        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); 
+        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(0.75); 
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,7 +542,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
+        renderer.setPixelRatio(0.75);
     });
     
     const cont = document.getElementById('canvas-container');
@@ -562,39 +562,7 @@ async function init() {
         }
     });
 
-    // 마우스 휠 및 트랙패드 줌 이벤트
-    window.addEventListener('wheel', onWheelZoom, { passive: false });
 
-    // 모바일/트랙패드 멀티터치 핀치 줌(Pinch Zoom) 지원
-    let touchStartDist = 0;
-    let initialZoomOnTouch = 1.0;
-    window.addEventListener('touchstart', (e) => {
-        if (e.touches.length === 2) {
-            touchStartDist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            initialZoomOnTouch = targetZoom;
-        }
-    }, { passive: true });
-
-    window.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 2 && touchStartDist > 0) {
-            const currentDist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            if (currentDist > 0) {
-                const factor = touchStartDist / currentDist;
-                targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, initialZoomOnTouch * factor));
-                if (e.cancelable) e.preventDefault();
-            }
-        }
-    }, { passive: false });
-
-    window.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2) touchStartDist = 0;
-    }, { passive: true });
     
     animate();
 
@@ -603,18 +571,7 @@ async function init() {
     if (sideView) sideView.addEventListener('scroll', updateActiveSideStyle);
 }
 
-// --------------------------------------------------------------------------
-// 5. 마우스 휠 & 핀치 줌 컨트롤 (onWheelZoom)
-// --------------------------------------------------------------------------
-function onWheelZoom(e) {
-    // 팝업, 모달, 관리자 패널 스크롤 시 3D 카메라 줌 작동 방지
-    if (e.target.closest('#side-style-container, #management-panel, #instruction-overlay, #info-popup, .instruction-card, .info-card')) {
-        return;
-    }
-    e.preventDefault();
-    targetZoom += e.deltaY * 0.0012;
-    targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom));
-}
+
 
 // 갤러리 썸네일 그리드 휠 가로 스크롤 전환
 window.addEventListener('wheel', (e) => {
@@ -932,8 +889,8 @@ async function createCylinderMesh(index) {
     
     group.position.y = yPos;
     
-    // 원통 3D 지오메트리 세그먼트 생성 (스탠바이미 최적화: 64 세그먼트로 매끄러운 곡면 유지 & 버텍스 연산 33% 추가 절감)
-    const geo = new THREE.CylinderGeometry(CYLINDER_RADIUS, CYLINDER_RADIUS, h, 64, 1, true);
+    // 원통 3D 지오메트리 세그먼트 생성 (스탠바이미 최적화: 32 세그먼트로 매끄러운 곡면 유지 & 버텍스 연산 대폭 절감)
+    const geo = new THREE.CylinderGeometry(CYLINDER_RADIUS, CYLINDER_RADIUS, h, 32, 1, true);
     
     // 3D 원통 원래 정점 위치와 2D 평면 정점 위치 데이터 구조 저장
     const posAttr = geo.attributes.position;
@@ -1077,8 +1034,8 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    // 1080p 화면 전용 1:1 픽셀 매핑 최적 해상도 (2560px) - 과도한 4K 텍스처 없이 선명도 최고 유지
-    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(2560, renderer.capabilities.maxTextureSize) : 2560;
+    // 1080p 화면 전용 1:1 픽셀 매핑 최적 해상도 향상 (4096px) - 과도한 부하 없이 선명도 개선
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
     const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
@@ -1116,7 +1073,13 @@ async function updateCylinderTexture(index) {
                 if (ctx.roundRect) {
                     ctx.roundRect(cardX, cardY, cardW, cardH, cardRadius);
                 } else {
-                    ctx.rect(cardX, cardY, cardW, cardH);
+                    let r = cardRadius;
+                    ctx.moveTo(cardX + r, cardY);
+                    ctx.arcTo(cardX + cardW, cardY, cardX + cardW, cardY + cardH, r);
+                    ctx.arcTo(cardX + cardW, cardY + cardH, cardX, cardY + cardH, r);
+                    ctx.arcTo(cardX, cardY + cardH, cardX, cardY, r);
+                    ctx.arcTo(cardX, cardY, cardX + cardW, cardY, r);
+                    ctx.closePath();
                 }
                 
                 // 카드 배경 및 클리핑
@@ -1137,8 +1100,8 @@ async function updateCylinderTexture(index) {
     }
     
     const tex = new THREE.CanvasTexture(canvas); 
-    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 2;
-    tex.anisotropy = Math.min(2, maxAnisotropy);
+    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 4;
+    tex.anisotropy = Math.min(4, maxAnisotropy);
     // Mipmap 자동 축소로 인한 흐림 현상 제거 (1080p 화면 1:1 직결 선명도 원본 텍스처 렌더링)
     tex.generateMipmaps = false;
     tex.minFilter = THREE.LinearFilter;
@@ -1240,7 +1203,7 @@ function onPointerUp(e) {
     const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
     if ((Date.now() - pointerStartTime) < 250 && dist < 5 && activeCylinderIndex !== -1) handleCylinderClick(e);
     isDragging = false; 
-    pauseAutoDuration = 5000;
+    pauseAutoDuration = 0;
     if (activeCylinderIndex !== -1) { 
         cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
         saveState(); 
@@ -1650,7 +1613,13 @@ window.showSetReference = () => {
     if (linkBtn) linkBtn.style.display = 'none';
     if (imgLink) { imgLink.removeAttribute('href'); imgLink.style.pointerEvents = 'none'; }
     if (buyOverlay) buyOverlay.style.display = 'none';
-    document.getElementById('info-popup').style.display = 'flex';
+    
+    const popup = document.getElementById('info-popup');
+    if (popup.style.display === 'flex' || popup.style.display === 'block') {
+        popup.style.display = 'none';
+        void popup.offsetWidth;
+    }
+    popup.style.display = 'flex';
 };
 
 window.showSetThumbnailPreview = (setId) => {
@@ -1667,7 +1636,13 @@ window.showSetThumbnailPreview = (setId) => {
     if (linkBtn) linkBtn.style.display = 'none';
     if (imgLink) { imgLink.removeAttribute('href'); imgLink.style.pointerEvents = 'none'; }
     if (buyOverlay) buyOverlay.style.display = 'none';
-    document.getElementById('info-popup').style.display = 'flex';
+    
+    const popup = document.getElementById('info-popup');
+    if (popup.style.display === 'flex' || popup.style.display === 'block') {
+        popup.style.display = 'none';
+        void popup.offsetWidth;
+    }
+    popup.style.display = 'flex';
 };
 
 window.handleSetDragStart = (e, idx) => {

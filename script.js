@@ -514,8 +514,9 @@ async function init() {
         camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000); 
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
-        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 2, 2)); 
+        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" }); 
+        renderer.setSize(window.innerWidth, window.innerHeight); 
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); // 스탠바이미 렌더링 부하 최소화를 위해 1.0 고정
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,7 +543,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 2, 2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -718,47 +719,7 @@ function easeInOutCubic(x) {
     return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
-function updateCylinderMorphs() {
-    const t = easeInOutCubic(flattenProgress);
 
-    cylinders.forEach(c => {
-        if (!c.mesh || !c.mesh.geometry || !c.mesh.geometry.userData || !c.mesh.geometry.userData.origPositions) return;
-        const geo = c.mesh.geometry;
-        const posAttr = geo.attributes.position;
-        const normAttr = geo.attributes.normal;
-        const uvAttr = geo.attributes.uv;
-        const orig = geo.userData.origPositions;
-        const flat = geo.userData.flatPositions;
-        const origNorm = geo.userData.origNormals;
-        const count = posAttr.count;
-
-        for (let i = 0; i < count; i++) {
-            const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
-            const u = uvAttr ? uvAttr.getX(i) : 0.5;
-            const theta = (u - 0.5) * Math.PI * 2;
-            
-            // 모프 변환 시 자연스러운 종이 곡면 깊이감 형성
-            const archFactor = Math.sin(t * Math.PI) * Math.cos(theta * 0.5) * 0.08;
-
-            const x = orig[ix] * (1 - t) + flat[ix] * t;
-            const y = orig[iy] * (1 - t) + flat[iy] * t;
-            const z = orig[iz] * (1 - t) + flat[iz] * t + archFactor;
-            posAttr.setXYZ(i, x, y, z);
-
-            if (normAttr && origNorm) {
-                const nx = origNorm[ix] * (1 - t);
-                const ny = origNorm[iy] * (1 - t);
-                const nz = origNorm[iz] * (1 - t) + 1.0 * t;
-                const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1.0;
-                normAttr.setXYZ(i, nx / len, ny / len, nz / len);
-            }
-        }
-        posAttr.needsUpdate = true;
-        if (normAttr) normAttr.needsUpdate = true;
-        if (geo.computeBoundingSphere) geo.computeBoundingSphere();
-        if (geo.computeBoundingBox) geo.computeBoundingBox();
-    });
-}
 
 
 // --------------------------------------------------------------------------
@@ -781,13 +742,19 @@ function animate(time) {
     // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션
     if (Math.abs(flattenProgress - targetFlattenProgress) > 0.0001) {
         flattenProgress += (targetFlattenProgress - flattenProgress) * (1 - Math.pow(1 - 0.08, timeScale));
-        updateCylinderMorphs();
     } else if (flattenProgress !== targetFlattenProgress) {
         flattenProgress = targetFlattenProgress;
-        updateCylinderMorphs();
     }
 
     const t = easeInOutCubic(flattenProgress);
+    const sinT = Math.sin(t * Math.PI);
+
+    cylinders.forEach((c) => { 
+        if (c.mesh && c.mesh.material && c.mesh.material.userData && c.mesh.material.userData.shader) {
+            c.mesh.material.userData.shader.uniforms.uMorphT.value = t;
+            c.mesh.material.userData.shader.uniforms.uSinT.value = sinT;
+        }
+    });
 
     // 카메라 Z축 거리를 2D/3D 상태 및 줌 배율에 맞춰 보정
     if (camera) {
@@ -928,7 +895,7 @@ async function createCylinderMesh(index) {
         flatPositions[i * 3 + 1] = y;
         flatPositions[i * 3 + 2] = 0;
     }
-    geo.userData = { origPositions, flatPositions, origNormals };
+    geo.setAttribute('flatPosition', new THREE.BufferAttribute(flatPositions, 3));
 
     // TV/임베디드 GPU(Mali 계열)에 최적화된 MeshStandardMaterial 적용 (투명 간격 지원)
     const mat = new THREE.MeshStandardMaterial({ 
@@ -939,8 +906,38 @@ async function createCylinderMesh(index) {
         alphaTest: 0.05
     });
 
-    // 원통 틈새 사이로 보이는 뒤쪽/안쪽 면(!gl_FrontFacing)을 어둡게 처리하여 깊이감 및 원근감 연출
+    mat.userData = { shader: null };
+
+    // 커스텀 쉐이더: CPU 버텍스 연산을 GPU로 이전하여 렉 유발 차단 및 성능 대폭 최적화
     mat.onBeforeCompile = (shader) => {
+        mat.userData.shader = shader;
+        shader.uniforms.uMorphT = { value: 0 };
+        shader.uniforms.uSinT = { value: 0 };
+        
+        shader.vertexShader = `
+            attribute vec3 flatPosition;
+            uniform float uMorphT;
+            uniform float uSinT;
+        ` + shader.vertexShader;
+        
+        shader.vertexShader = shader.vertexShader.replace(
+            '#include <beginnormal_vertex>',
+            `
+            vec3 objectNormal = mix(normal, vec3(0.0, 0.0, 1.0), uMorphT);
+            objectNormal = normalize(objectNormal);
+            `
+        ).replace(
+            '#include <begin_vertex>',
+            `
+            vec3 transformed = vec3(position);
+            float theta = (uv.x - 0.5) * 6.28318530718;
+            float archFactor = uSinT * cos(theta * 0.5) * 0.08;
+            
+            transformed = mix(position, flatPosition, uMorphT);
+            transformed.z += archFactor;
+            `
+        );
+
         shader.fragmentShader = shader.fragmentShader.replace(
             '#include <dithering_fragment>',
             `#include <dithering_fragment>
@@ -1195,7 +1192,7 @@ function onPointerMove(e) {
     
     if (isDragging && activeCylinderIndex !== -1) { 
         const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
-        if (dist > 20) {
+        if (dist > 40) {
             hasDragged = true;
         }
 
@@ -1219,7 +1216,7 @@ function onPointerUp(e) {
     }
     const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
     
-    if (!hasDragged && dist < 20 && activeCylinderIndex !== -1) {
+    if (!hasDragged && activeCylinderIndex !== -1) {
         handleCylinderClick(e);
     }
     

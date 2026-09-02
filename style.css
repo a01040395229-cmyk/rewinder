@@ -1112,7 +1112,7 @@ h3 {
     justify-content: flex-end;
     padding-right: 60px;
     pointer-events: auto;
-    animation: fadeIn 0.3s ease;
+    animation: fadeIn 0.15s ease;
 }
 
 .info-card {

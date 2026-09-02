@@ -495,7 +495,7 @@ let editingSetId = null;
 function getCylinderHeight(index) {
     let h = 7.0; 
     if (index === 0) h = 8.5;       // HAT (모자 원통 높이)
-    else if (index === 1) h = 5.0;  // ACC (액세서리 원통 높이)
+    else if (index === 1) h = 7.0;  // ACC (액세서리 원통 높이)
     else if (index === 2) h = 18.0; // TOP (상의 원통 높이)
     else if (index === 3) h = 22.0; // BOTTOM (하의 원통 높이)
     else if (index === 4) h = 7.0;  // SHOES (신발 원통 높이)
@@ -1029,7 +1029,7 @@ async function loadCylinderImage(url) {
 async function updateCylinderTexture(index) {
     let hVal = 7.0; 
     if (index === 0) hVal = 8.5; 
-    else if (index === 1) hVal = 5.0; 
+    else if (index === 1) hVal = 7.0; 
     else if (index === 2) hVal = 18.0; 
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
@@ -1102,9 +1102,9 @@ async function updateCylinderTexture(index) {
     const tex = new THREE.CanvasTexture(canvas); 
     const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 4;
     tex.anisotropy = Math.min(4, maxAnisotropy);
-    // Mipmap 자동 축소로 인한 흐림 현상 제거 (1080p 화면 1:1 직결 선명도 원본 텍스처 렌더링)
-    tex.generateMipmaps = false;
-    tex.minFilter = THREE.LinearFilter;
+    // 양 옆 화질 저하(비등방성) 문제 해결을 위해 Mipmap 활성화 (성능을 고려해 anisotropy는 4로 유지)
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;
     
     tex.wrapS = THREE.RepeatWrapping;
@@ -1203,10 +1203,13 @@ function onPointerUp(e) {
     const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
     if ((Date.now() - pointerStartTime) < 250 && dist < 5 && activeCylinderIndex !== -1) handleCylinderClick(e);
     isDragging = false; 
+    isHovering = false;
+    hoveredCylinderIndex = -1;
     pauseAutoDuration = 0;
     if (activeCylinderIndex !== -1) { 
         cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
         saveState(); 
+        activeCylinderIndex = -1;
     }
 }
 

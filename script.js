@@ -515,7 +515,7 @@ async function init() {
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25)); 
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,7 +542,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -840,20 +840,23 @@ function animate() {
     const isInfoPopupOpen = document.getElementById('info-popup') && document.getElementById('info-popup').style.display === 'flex';
     const canAutoRotate = !isDragging && !isHovering && pauseAutoDuration <= 0 && !isInfoPopupOpen;
 
-    if (canAutoRotate) {
-        cylinders.forEach((c) => {
-            if (c && c.autoSpeed) {
-                c.targetRotation += c.autoSpeed;
-            }
-        });
-    }
-
     const L = Math.PI * 2 * CYLINDER_RADIUS;
 
     // 각 카테고리 원통 위치 업데이트
     cylinders.forEach((c) => { 
         if (c.currentAngle === undefined) c.currentAngle = c.group.rotation.y;
-        c.currentAngle += (c.targetRotation - c.currentAngle) * 0.12;
+
+        if (canAutoRotate && c && c.autoSpeed) {
+            // 자동 회전 시 lerp 지터 렉을 유발하지 않도록 각도를 직접 부드럽게 연속 가산
+            c.currentAngle += c.autoSpeed;
+            // 2PI 모듈로 정규화로 오버플로우 및 float 오차 누적 방지
+            const TWO_PI = Math.PI * 2;
+            c.currentAngle = ((c.currentAngle % TWO_PI) + TWO_PI) % TWO_PI;
+            c.targetRotation = c.currentAngle;
+        } else {
+            // 드래그/스냅 등 사용자 터치 인터랙션 시 lerp 보정
+            c.currentAngle += (c.targetRotation - c.currentAngle) * 0.12;
+        }
 
         // 2D 펼침 시 크기 비율 확대 (1.05 ~ 1.35)
         const scaleVal = 1.0 * (1 - t) + 1.35 * t;
@@ -1074,7 +1077,7 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(2048, renderer.capabilities.maxTextureSize) : 2048;
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
     const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
@@ -1083,7 +1086,7 @@ async function updateCylinderTexture(index) {
     canvas.height = Math.round((MAX_WIDTH / ITEM_COUNT) * hRatio);
     const ctx = canvas.getContext('2d', { alpha: true }); 
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'medium';
+    ctx.imageSmoothingQuality = 'high';
     
     // 배경은 투명하게 비워 각 칸 사이의 간격을 띄움
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1123,7 +1126,7 @@ async function updateCylinderTexture(index) {
                 const scale = Math.max(cardW / img.width, cardH / img.height);
                 const dW = img.width * scale, dH = img.height * scale;
                 ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'medium';
+                ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(img, cardX + (cardW - dW)/2, cardY + (cardH - dH)/2, dW, dH); 
                 
                 ctx.restore();
@@ -1133,8 +1136,8 @@ async function updateCylinderTexture(index) {
     }
     
     const tex = new THREE.CanvasTexture(canvas); 
-    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 2;
-    tex.anisotropy = Math.min(2, maxAnisotropy);
+    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 4;
+    tex.anisotropy = Math.min(4, maxAnisotropy);
     tex.generateMipmaps = true;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;

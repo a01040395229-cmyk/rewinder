@@ -550,6 +550,8 @@ async function init() {
     if (cont) {
         cont.addEventListener('pointerdown', onPointerDown); 
         cont.addEventListener('dblclick', (e) => {
+            // 이미지 더블클릭 시 팝업, 배경 더블클릭 시 전체화면
+            if (handleCylinderDblClick(e)) return;
             toggleFullScreen();
         });
     }
@@ -559,6 +561,8 @@ async function init() {
     // 배경 영역 더블클릭 시 전체화면 토글
     window.addEventListener('dblclick', (e) => {
         if (e.target === document.body || e.target.id === 'canvas-container' || e.target.tagName === 'CANVAS') {
+            // 이미지 위에서 더블클릭한 경우 전체화면 전환하지 않음
+            if (handleCylinderDblClick(e)) return;
             toggleFullScreen();
         }
     });
@@ -1217,10 +1221,6 @@ function onPointerUp(e) {
     }
     const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
     
-    if (!hasDragged && activeCylinderIndex !== -1) {
-        handleCylinderClick(e);
-    }
-    
     if (hasDragged && activeCylinderIndex !== -1) { 
         cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
         if (typeof saveState === 'function') saveState(); 
@@ -1234,8 +1234,8 @@ function onPointerUp(e) {
     activeCylinderIndex = -1;
 }
 
-// 아이템 클릭 시 팝업 띄우기
-function handleCylinderClick(e) {
+// 아이템 더블클릭 시 팝업 띄우기 (이미지 히트 시 true 반환)
+function handleCylinderDblClick(e) {
     const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
     const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
     const intersects = r.intersectObjects(getAllInteractableMeshes());
@@ -1244,8 +1244,12 @@ function handleCylinderClick(e) {
         const rawUvIdx = Math.floor(intersects[0].uv.x * ITEM_COUNT);
         const items = CATEGORIES[catId]?.items || [];
         const uvIdx = items.length > 0 ? rawUvIdx % items.length : rawUvIdx;
-        if (catId !== -1 && items[uvIdx]) showInfoPopup(catId, uvIdx);
+        if (catId !== -1 && items[uvIdx]) {
+            showInfoPopup(catId, uvIdx);
+            return true;
+        }
     }
+    return false;
 }
 
 // --------------------------------------------------------------------------

@@ -37,7 +37,7 @@ let pointerStartTime = 0, pointerStartPos = { x: 0, y: 0 };
 
 // 원통 배치 및 회전 정밀도 파라미터
 const ITEM_COUNT = 20;                             // 원통 1개당 배치되는 패션 아이템 슬롯 개수 (20개)
-const CYLINDER_RADIUS = 0.9;                       // 3D 원통 반경
+const CYLINDER_RADIUS = 1.0;                       // 3D 원통 반경
 let isLocked = false;                              // 전시 모드(Locked Mode) 잠금 여부
 const SLOT_WIDTH = (2 * Math.PI * CYLINDER_RADIUS) / ITEM_COUNT; // 1개 아이템 슬롯 호의 길이
 const ROTATION_STEP = (Math.PI * 2) / ITEM_COUNT;  // 아이템 1개당 회전 각도 (18도)
@@ -515,7 +515,7 @@ async function init() {
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
         renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(0.75); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 2, 2)); 
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,7 +542,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(0.75);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 2, 2));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -1139,7 +1139,7 @@ function onPointerDown(e) {
         if (activeCylinderIndex !== -1) { 
             isDragging = true; 
             hasDragged = false;
-            pauseAutoDuration = 5000;
+            pauseAutoDuration = 3000;
             dragStartX = e.clientX; 
             dragStartRotation = cylinders[activeCylinderIndex].targetRotation; 
             dragStartRotations = cylinders.map(c => c ? c.targetRotation : 0);
@@ -1224,7 +1224,7 @@ function onPointerUp(e) {
     hasDragged = false;
     isHovering = false;
     hoveredCylinderIndex = -1;
-    pauseAutoDuration = 5000;
+    pauseAutoDuration = 3000;
     activeCylinderIndex = -1;
 }
 
@@ -1881,20 +1881,35 @@ window.saveToShareableFile = async () => {
         const catContainer = document.getElementById('category-controls');
         const setListContainer = document.getElementById('set-settings-list');
         const canvasContainer = document.getElementById('canvas-container');
+        const sideStyleList = document.getElementById('side-style-list');
+        const sideStyleContainer = document.getElementById('side-style-container');
         
         const backupCat = catContainer ? catContainer.innerHTML : '';
         const backupSetList = setListContainer ? setListContainer.innerHTML : '';
         const backupCanvas = canvasContainer ? canvasContainer.innerHTML : '';
+        const backupSideList = sideStyleList ? sideStyleList.innerHTML : '';
+        const scrollInited = sideStyleContainer ? sideStyleContainer.dataset.scrollInited : null;
+        const dragInited = sideStyleContainer ? sideStyleContainer.dataset.dragInited : null;
         
         if (catContainer) catContainer.innerHTML = '';
         if (setListContainer) setListContainer.innerHTML = '';
         if (canvasContainer) canvasContainer.innerHTML = '';
+        if (sideStyleList) sideStyleList.innerHTML = '';
+        if (sideStyleContainer) {
+            sideStyleContainer.removeAttribute('data-scroll-inited');
+            sideStyleContainer.removeAttribute('data-drag-inited');
+        }
 
         let html = document.documentElement.outerHTML; 
 
         if (catContainer) catContainer.innerHTML = backupCat;
         if (setListContainer) setListContainer.innerHTML = backupSetList;
         if (canvasContainer) canvasContainer.innerHTML = backupCanvas;
+        if (sideStyleList) sideStyleList.innerHTML = backupSideList;
+        if (sideStyleContainer) {
+            if (scrollInited) sideStyleContainer.dataset.scrollInited = scrollInited;
+            if (dragInited) sideStyleContainer.dataset.dragInited = dragInited;
+        }
 
         // 3. 기존 EMBEDDED_DATA 스크립트 제거
         html = html.replace(/<script>\s*window\.EMBEDDED_DATA\s*=\s*[\s\S]*?<\/script>/gi, ""); 
@@ -2000,7 +2015,7 @@ window.closeInfoPopup = () => {
 };
 window.randomize = () => { 
     lastInteractionTime = Date.now(); 
-    pauseAutoDuration = 5000; 
+    pauseAutoDuration = 3000; 
     cylinders.forEach((c, cIdx) => {
         const itemCount = (CATEGORIES[cIdx] && CATEGORIES[cIdx].items && CATEGORIES[cIdx].items.length > 0) 
             ? CATEGORIES[cIdx].items.length 
@@ -2016,7 +2031,7 @@ window.randomize = () => {
     saveState(); 
 };
 
-window.resetRotation = () => { lastInteractionTime = Date.now(); pauseAutoDuration = 5000; cylinders.forEach(c => c.targetRotation = 0); saveState(); };
+window.resetRotation = () => { lastInteractionTime = Date.now(); pauseAutoDuration = 3000; cylinders.forEach(c => c.targetRotation = 0); saveState(); };
 window.updateItemTitle = (cId, idx, val) => { CATEGORIES[cId].items[idx].title = val; saveState(); };
 window.updateItemMemo = (cId, idx, val) => { CATEGORIES[cId].items[idx].desc = val; saveState(); };
 window.updateItemLink = (cId, idx, val) => { CATEGORIES[cId].items[idx].link = val; saveState(); };

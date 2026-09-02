@@ -186,7 +186,7 @@ h3 {
     left: 40px;
     transform: translateY(-50%);
     z-index: 500;
-    pointer-events: auto;
+    pointer-events: none;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1381,26 +1381,4 @@ textarea,
 .btn-white:hover {
     transform: scale(1.05);
     filter: brightness(0.95);
-}
-
-/* --------------------------------------------------------------------------
-   15. 스탠바이미 렌더링 성능 최적화 (GPU Layer & CSS Containment)
-   -------------------------------------------------------------------------- */
-#side-style-container {
-    will-change: scroll-position;
-    contain: content;
-}
-
-.side-style-item {
-    contain: layout style paint;
-    transform: translateZ(0);
-}
-
-.thumbnail-grid {
-    will-change: scroll-position;
-    contain: content;
-}
-
-#canvas-container canvas {
-    transform: translateZ(0);
 }

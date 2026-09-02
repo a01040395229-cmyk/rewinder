@@ -20,7 +20,10 @@ function logDebug(msg) {
     const d = document.getElementById('debug-log');
     if(d) d.innerHTML += '<div>' + msg + '</div>';
 }
-window.addEventListener('error', function(e) { logDebug('❌ ERROR: ' + e.message); });
+window.addEventListener('error', function(e) {
+    if (!e.message || e.message === 'Script error.' || e.message === 'Script error') return;
+    logDebug('❌ ERROR: ' + e.message);
+});
 
 // --------------------------------------------------------------------------
 // 2. Three.js 렌더링 전역 객체 및 인터랙션 상태 변수
@@ -587,8 +590,30 @@ window.addEventListener('wheel', (e) => {
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
         }
+        return;
     }
-}, { passive: false });
+
+    if (e.target.closest('#management-panel, #side-style-wrapper, #instruction-overlay, #info-popup, .controls, #audio-control-btn, .ui-overlay, #management-btn-wrapper')) {
+        return;
+    }
+
+    const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+    const r = new THREE.Raycaster();
+    r.setFromCamera(m, camera);
+    const intersects = r.intersectObjects(getAllInteractableMeshes());
+    
+    let targetCat = hoveredCylinderIndex;
+    if (intersects.length > 0) {
+        targetCat = findCategoryIndexByMesh(intersects[0].object);
+    }
+    
+    if (targetCat !== -1 && cylinders[targetCat]) {
+        const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        const sensitivity = isFlatView ? 0.003 : 0.0035;
+        cylinders[targetCat].targetRotation += delta * sensitivity;
+        pauseAutoDuration = 3000;
+    }
+}, { passive: true });
 
 // 갤러리 썸네일 그리드 드래그 스크롤
 let isGridDragging = false;
@@ -701,8 +726,8 @@ async function loadEverything() {
     
     // 원통 텍스처 및 각도 데이터 적용
     const currentRots = dataToLoad.rotations || [];
-    await Promise.all(CATEGORIES.map((_, i) => updateCylinderTexture(i)));
     for (let i = 0; i < CATEGORIES.length; i++) {
+        await updateCylinderTexture(i);
         if (currentRots[i] !== undefined) {
             cylinders[i].targetRotation = currentRots[i];
             cylinders[i].currentAngle = currentRots[i];
@@ -757,6 +782,32 @@ function animate(time) {
         if (c.mesh && c.mesh.material && c.mesh.material.userData && c.mesh.material.userData.shader) {
             c.mesh.material.userData.shader.uniforms.uMorphT.value = t;
             c.mesh.material.userData.shader.uniforms.uSinT.value = sinT;
+        }
+
+        // CPU 지오메트리 버텍스 위치 동기화 (3D <-> 2D Flat Raycaster 레이캐스팅 정밀도 100% 보장)
+        if (c.mesh && c.mesh.geometry && c.mesh.geometry.userData.origPositions) {
+            const geo = c.mesh.geometry;
+            if (geo.userData.lastT !== t) {
+                geo.userData.lastT = t;
+                const orig = geo.userData.origPositions;
+                const flat = geo.userData.flatPositions;
+                const posAttr = geo.attributes.position;
+                const count = posAttr.count;
+                for (let i = 0; i < count; i++) {
+                    const u = geo.attributes.uv.getX(i);
+                    const theta = (u - 0.5) * Math.PI * 2;
+                    const archFactor = sinT * Math.cos(theta * 0.5) * 0.08;
+
+                    const px = orig[i * 3] * (1 - t) + flat[i * 3] * t;
+                    const py = orig[i * 3 + 1] * (1 - t) + flat[i * 3 + 1] * t;
+                    const pz = orig[i * 3 + 2] * (1 - t) + (flat[i * 3 + 2] + archFactor) * t;
+
+                    posAttr.setXYZ(i, px, py, pz);
+                }
+                posAttr.needsUpdate = true;
+                geo.computeBoundingSphere();
+                geo.computeBoundingBox();
+            }
         }
     });
 
@@ -815,10 +866,9 @@ function animate(time) {
         c.mesh.rotation.y = (- (ROTATION_STEP / 2)) * (1 - t);
 
         if (c.clones) {
-            const isVisible = t > 0.01;
             c.clones.forEach(clone => {
-                if (isVisible) clone.rotation.y = c.mesh.rotation.y;
-                if (clone.visible !== isVisible) clone.visible = isVisible;
+                clone.rotation.y = c.mesh.rotation.y;
+                clone.visible = t > 0.01;
             });
         }
     }); 
@@ -900,6 +950,9 @@ async function createCylinderMesh(index) {
         flatPositions[i * 3 + 1] = y;
         flatPositions[i * 3 + 2] = 0;
     }
+    geo.userData.origPositions = origPositions;
+    geo.userData.flatPositions = flatPositions;
+    geo.userData.lastT = -1;
     geo.setAttribute('flatPosition', new THREE.BufferAttribute(flatPositions, 3));
 
     // TV/임베디드 GPU(Mali 계열)에 최적화된 MeshStandardMaterial 적용 (투명 간격 지원)
@@ -1143,11 +1196,12 @@ function onPointerDown(e) {
     }
     pointerStartTime = Date.now(); pointerStartPos = { x: e.clientX, y: e.clientY };
     const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
-    const r = new THREE.Raycaster(); r.setFromCamera(m, camera); const h = r.intersectObjects(scene.children, true);
-    if (h.length) {
-        let o = h[0].object; while(o.parent && !scene.children.includes(o)) o = o.parent;
-        activeCylinderIndex = cylinders.findIndex(c => c.group === o);
-        if (activeCylinderIndex !== -1) { 
+    const r = new THREE.Raycaster(); r.setFromCamera(m, camera); 
+    const intersects = r.intersectObjects(getAllInteractableMeshes());
+    if (intersects.length > 0) {
+        const catId = findCategoryIndexByMesh(intersects[0].object);
+        if (catId !== -1) { 
+            activeCylinderIndex = catId;
             isDragging = true; 
             hasDragged = false;
             pauseAutoDuration = 3000;
@@ -1172,29 +1226,22 @@ function getAllInteractableMeshes() {
 }
 
 function findCategoryIndexByMesh(mesh) {
-    return cylinders.findIndex(c => c.mesh === mesh || (c.clones && c.clones.includes(mesh)));
+    return cylinders.findIndex(c => c && (c.mesh === mesh || (c.clones && c.clones.includes(mesh))));
 }
 
-const sharedPointerVec = new THREE.Vector2();
-const sharedRaycaster = new THREE.Raycaster();
-let hoverRafPending = false;
-let lastPointerEvent = null;
-
-function performHoverCheck(e) {
-    if (!camera || isDragging) return;
+function onPointerMove(e) { 
     if (e.target.closest('#management-panel, #side-style-wrapper, #instruction-overlay, #info-popup, .controls, #audio-control-btn, .ui-overlay, #management-btn-wrapper')) {
         isHovering = false; 
         hoveredCylinderIndex = -1;
         document.body.style.cursor = 'default';
         return;
     }
-    sharedPointerVec.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-    sharedRaycaster.setFromCamera(sharedPointerVec, camera);
-    const intersects = sharedRaycaster.intersectObjects(getAllInteractableMeshes());
+    const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+    const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
+    const intersects = r.intersectObjects(getAllInteractableMeshes());
     
     if (intersects.length > 0) {
-        isHovering = true;
-        const catId = findCategoryIndexByMesh(intersects[0].object);
+        isHovering = true; const catId = findCategoryIndexByMesh(intersects[0].object);
         hoveredCylinderIndex = catId;
         document.body.style.cursor = 'default';
     } else { 
@@ -1202,9 +1249,7 @@ function performHoverCheck(e) {
         hoveredCylinderIndex = -1;
         document.body.style.cursor = 'default'; 
     }
-}
-
-function onPointerMove(e) { 
+    
     if (isDragging && activeCylinderIndex !== -1) { 
         const dist = Math.hypot(e.clientX - pointerStartPos.x, e.clientY - pointerStartPos.y);
         if (dist > 40) {
@@ -1220,16 +1265,6 @@ function onPointerMove(e) {
             cylinders[activeCylinderIndex].targetRotation = dragStartRotation + deltaRot; 
         }
         document.body.style.cursor = 'default'; 
-        return;
-    }
-
-    lastPointerEvent = e;
-    if (!hoverRafPending) {
-        hoverRafPending = true;
-        requestAnimationFrame(() => {
-            hoverRafPending = false;
-            if (lastPointerEvent) performHoverCheck(lastPointerEvent);
-        });
     }
 }
 
@@ -1244,6 +1279,29 @@ function onPointerUp(e) {
     if (hasDragged && activeCylinderIndex !== -1) { 
         cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
         if (typeof saveState === 'function') saveState(); 
+    } else if (!hasDragged && dist < 15 && activeCylinderIndex !== -1) {
+        // 단일 클릭 시 해당 슬롯/아이템을 화면 중앙으로 회전 정렬
+        const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+        const r = new THREE.Raycaster();
+        r.setFromCamera(m, camera);
+        const intersects = r.intersectObjects(getAllInteractableMeshes());
+        if (intersects.length > 0) {
+            const catId = findCategoryIndexByMesh(intersects[0].object);
+            if (catId === activeCylinderIndex && intersects[0].uv) {
+                const rawUvIdx = Math.floor(intersects[0].uv.x * ITEM_COUNT);
+                const items = CATEGORIES[catId]?.items || [];
+                const itemLen = items.length > 0 ? items.length : ITEM_COUNT;
+                const uvIdx = rawUvIdx % itemLen;
+                
+                const currentRot = cylinders[catId].targetRotation;
+                const baseIdx = ((Math.round(-currentRot / ROTATION_STEP) % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT;
+                const diff = (uvIdx - baseIdx + ITEM_COUNT) % ITEM_COUNT;
+                let stepDiff = diff > ITEM_COUNT / 2 ? diff - ITEM_COUNT : diff;
+                
+                cylinders[catId].targetRotation = Math.round((currentRot - stepDiff * ROTATION_STEP) / ROTATION_STEP) * ROTATION_STEP;
+                if (typeof saveState === 'function') saveState();
+            }
+        }
     }
 
     isDragging = false; 
@@ -1344,7 +1402,7 @@ window.updateTopCarousel = () => {
             ${s.name}
         </div>`).join(''); 
     
-    const copies = 10;
+    const copies = 50;
     list.innerHTML = baseHTML.repeat(copies);
     
     if (!container.dataset.scrollInited) {
@@ -1462,45 +1520,27 @@ function initSideWheelDrag() {
 }
 
 
-let activeSideItemEl = null;
-
 function updateActiveSideStyle() {
     const container = document.getElementById('side-style-container');
-    if (!container) return;
-    const list = container.firstElementChild;
-    if (!list || !list.children.length) return;
-
-    const items = list.children;
-    const containerHeight = container.clientHeight;
-    const containerCenterY = container.scrollTop + containerHeight / 2;
-
-    const firstItem = items[0];
-    const itemHeight = firstItem.offsetHeight;
-    if (!itemHeight) return;
-
-    const gap = 12;
-    const step = itemHeight + gap;
-    const approxIdx = Math.floor(containerCenterY / step);
-    const startIdx = Math.max(0, approxIdx - 3);
-    const endIdx = Math.min(items.length - 1, approxIdx + 3);
-
+    const items = container.querySelectorAll('.side-style-item');
+    if (!items.length) return;
+    
+    const containerCenter = container.getBoundingClientRect().top + container.clientHeight / 2;
     let closestItem = null;
     let minDistance = Infinity;
-
-    for (let i = startIdx; i <= endIdx; i++) {
-        const item = items[i];
-        const itemCenter = item.offsetTop + itemHeight / 2;
-        const distance = Math.abs(containerCenterY - itemCenter);
+    
+    items.forEach(item => {
+        const itemCenter = item.getBoundingClientRect().top + item.clientHeight / 2;
+        const distance = Math.abs(containerCenter - itemCenter);
         if (distance < minDistance) {
             minDistance = distance;
             closestItem = item;
         }
-    }
-
-    if (closestItem && closestItem !== activeSideItemEl) {
-        if (activeSideItemEl) activeSideItemEl.classList.remove('active');
+    });
+    
+    items.forEach(item => item.classList.remove('active'));
+    if (closestItem) {
         closestItem.classList.add('active');
-        activeSideItemEl = closestItem;
     }
 }
 

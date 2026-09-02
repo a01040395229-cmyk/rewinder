@@ -1041,9 +1041,7 @@ async function updateCylinderTexture(index) {
     
     const canvas = document.createElement('canvas'); 
     canvas.width = MAX_WIDTH; 
-    const desiredHeight = Math.round((MAX_WIDTH / ITEM_COUNT) * hRatio);
-    // 텍스처 Mipmap이 정상 생성되려면 가로세로가 모두 2의 거듭제곱(Power of Two)이어야 함
-    canvas.height = Math.pow(2, Math.round(Math.log2(desiredHeight)));
+    canvas.height = Math.round((MAX_WIDTH / ITEM_COUNT) * hRatio);
     const ctx = canvas.getContext('2d', { alpha: true }); 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -1102,9 +1100,9 @@ async function updateCylinderTexture(index) {
     }
     
     const tex = new THREE.CanvasTexture(canvas); 
-    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 16;
-    tex.anisotropy = maxAnisotropy;
-    // 양 옆 화질 저하(비등방성) 문제 해결을 위해 Mipmap 활성화 및 최대 Anisotropy 적용
+    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 4;
+    tex.anisotropy = Math.min(4, maxAnisotropy);
+    // 양 옆 화질 저하(비등방성) 문제 해결을 위해 Mipmap 활성화 (성능을 고려해 anisotropy는 4로 유지)
     tex.generateMipmaps = true;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;
@@ -1207,7 +1205,7 @@ function onPointerUp(e) {
     isDragging = false; 
     isHovering = false;
     hoveredCylinderIndex = -1;
-    pauseAutoDuration = 0;
+    pauseAutoDuration = 5000;
     if (activeCylinderIndex !== -1) { 
         cylinders[activeCylinderIndex].targetRotation = Math.round(cylinders[activeCylinderIndex].targetRotation / ROTATION_STEP) * ROTATION_STEP; 
         saveState(); 

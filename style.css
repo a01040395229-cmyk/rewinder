@@ -104,6 +104,9 @@ h3 {
     background: radial-gradient(circle at 50% 50%, #1a1c20 0%, #0a0b0d 60%, #050505 100%);
     touch-action: none;
     z-index: 1;
+    /* 스탠바이미 GPU 하드웨어 레이어 가속 유도 */
+    transform: translateZ(0);
+    will-change: transform;
 }
 
 /* 화면 좌우 어두운 가장자리 비네팅(Vignette) 가림막 */

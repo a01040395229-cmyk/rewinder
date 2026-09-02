@@ -515,7 +515,7 @@ async function init() {
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.0)); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); 
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,7 +542,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.0));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -810,6 +810,9 @@ function updateCylinderMorphs() {
 function animate() { 
     requestAnimationFrame(animate); 
 
+    // 백그라운드 탭 또는 문서 숨김 시 렌더링 연산 일시정지 (스탠바이미 CPU/GPU 리소스 보호)
+    if (document.hidden) return;
+
     // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션
     if (Math.abs(flattenProgress - targetFlattenProgress) > 0.0001) {
         flattenProgress += (targetFlattenProgress - flattenProgress) * 0.08;
@@ -926,8 +929,8 @@ async function createCylinderMesh(index) {
     
     group.position.y = yPos;
     
-    // 원통 3D 지오메트리 세그먼트 생성 (스탠바이미 및 저전력 GPU 최적화: 96 세그먼트로 매끄러운 곡면 유지 & 버텍스 연산 40% 절감)
-    const geo = new THREE.CylinderGeometry(CYLINDER_RADIUS, CYLINDER_RADIUS, h, 96, 1, true);
+    // 원통 3D 지오메트리 세그먼트 생성 (스탠바이미 최적화: 64 세그먼트로 매끄러운 곡면 유지 & 버텍스 연산 33% 추가 절감)
+    const geo = new THREE.CylinderGeometry(CYLINDER_RADIUS, CYLINDER_RADIUS, h, 64, 1, true);
     
     // 3D 원통 원래 정점 위치와 2D 평면 정점 위치 데이터 구조 저장
     const posAttr = geo.attributes.position;
@@ -987,9 +990,9 @@ async function createCylinderMesh(index) {
     mesh.frustumCulled = false;
     group.add(mesh);
 
-    // 2D 무한 스크롤 연출을 위한 좌우 복제 클론 패널 (-4L ~ +4L)
+    // 2D 무한 스크롤 연출을 위한 좌우 복제 클론 패널 (스탠바이미 최적화: 4개 클론으로 씬 메시 44% 절감)
     const clones = [];
-    const offsets = [-4, -3, -2, -1, 1, 2, 3, 4];
+    const offsets = [-2, -1, 1, 2];
     offsets.forEach(mult => {
         const clone = new THREE.Mesh(geo, mat);
         clone.rotation.y = - (ROTATION_STEP / 2);
@@ -1071,7 +1074,7 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(2048, renderer.capabilities.maxTextureSize) : 2048;
     const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
@@ -1080,7 +1083,7 @@ async function updateCylinderTexture(index) {
     canvas.height = Math.round((MAX_WIDTH / ITEM_COUNT) * hRatio);
     const ctx = canvas.getContext('2d', { alpha: true }); 
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = 'medium';
     
     // 배경은 투명하게 비워 각 칸 사이의 간격을 띄움
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1120,7 +1123,7 @@ async function updateCylinderTexture(index) {
                 const scale = Math.max(cardW / img.width, cardH / img.height);
                 const dW = img.width * scale, dH = img.height * scale;
                 ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
+                ctx.imageSmoothingQuality = 'medium';
                 ctx.drawImage(img, cardX + (cardW - dW)/2, cardY + (cardH - dH)/2, dW, dH); 
                 
                 ctx.restore();
@@ -1130,8 +1133,8 @@ async function updateCylinderTexture(index) {
     }
     
     const tex = new THREE.CanvasTexture(canvas); 
-    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 8;
-    tex.anisotropy = Math.min(8, maxAnisotropy);
+    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 2;
+    tex.anisotropy = Math.min(2, maxAnisotropy);
     tex.generateMipmaps = true;
     tex.minFilter = THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;

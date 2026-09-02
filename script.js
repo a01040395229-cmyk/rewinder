@@ -515,7 +515,7 @@ async function init() {
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }); 
-        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25)); 
+        renderer.setSize(window.innerWidth, window.innerHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); 
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -542,7 +542,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -1077,7 +1077,8 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
+    // 1080p 화면 전용 1:1 픽셀 매핑 최적 해상도 (2560px) - 과도한 4K 텍스처 없이 선명도 최고 유지
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(2560, renderer.capabilities.maxTextureSize) : 2560;
     const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
@@ -1136,10 +1137,11 @@ async function updateCylinderTexture(index) {
     }
     
     const tex = new THREE.CanvasTexture(canvas); 
-    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 4;
-    tex.anisotropy = Math.min(4, maxAnisotropy);
-    tex.generateMipmaps = true;
-    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 2;
+    tex.anisotropy = Math.min(2, maxAnisotropy);
+    // Mipmap 자동 축소로 인한 흐림 현상 제거 (1080p 화면 1:1 직결 선명도 원본 텍스처 렌더링)
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     
     tex.wrapS = THREE.RepeatWrapping;

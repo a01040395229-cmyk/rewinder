@@ -1409,7 +1409,8 @@ window.updateTopCarousel = () => {
         container.dataset.scrollInited = "true";
         container.addEventListener('scroll', () => {
             if (!STYLE_SETS.length) return;
-            const itemHeight = list.children[0]?.offsetHeight || 0;
+            const firstItem = list.children[0];
+            const itemHeight = firstItem ? firstItem.getBoundingClientRect().height : 0;
             const gap = 12; 
             const groupHeight = (itemHeight + gap) * STYLE_SETS.length;
             const middleScroll = groupHeight * Math.floor(copies / 2);
@@ -1446,7 +1447,7 @@ window.scrollToSetIndex = (idx) => {
     const items = container ? container.querySelectorAll('.side-style-item') : null;
     if (items && items[idx]) {
         const normalItem = container.querySelector('.side-style-item:not(.active)') || items[0];
-        const itemHeight = normalItem.offsetHeight || 0;
+        const itemHeight = normalItem.getBoundingClientRect().height || 0;
         const gap = 12;
         const fullItemHeight = itemHeight + gap;
         const computedStyle = window.getComputedStyle(container);
@@ -1548,7 +1549,7 @@ function updateActiveSideStyle() {
     if (!items.length) return;
     
     const normalItem = container.querySelector('.side-style-item:not(.active)') || items[0];
-    const itemHeight = normalItem.offsetHeight || 0;
+    const itemHeight = normalItem.getBoundingClientRect().height || 0;
     const gap = 12;
     const fullItemHeight = itemHeight + gap;
     if (fullItemHeight === 0) return;
@@ -1564,9 +1565,8 @@ function updateActiveSideStyle() {
     
     const closestItem = items[closestIndex];
     if (closestItem) {
-        const currentActive = container.querySelector('.side-style-item.active');
-        if (currentActive !== closestItem) {
-            if (currentActive) currentActive.classList.remove('active');
+        if (!closestItem.classList.contains('active')) {
+            container.querySelectorAll('.side-style-item.active').forEach(item => item.classList.remove('active'));
             closestItem.classList.add('active');
         }
     }

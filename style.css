@@ -63,6 +63,10 @@ button:active {
 
 html,
 body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
     touch-action: manipulation;
     /* 기본 터치 제스처 조절 */
     user-select: none;
@@ -73,12 +77,9 @@ body {
 }
 
 body {
-    margin: 0;
     overflow: hidden;
     /* 전역 스크롤바 숨김 */
     background-color: var(--primary-bg);
-    width: 100vw;
-    height: 100vh;
 }
 
 /* 전시 모드(mode-locked) 시 편집 관련 관리 버튼 및 삭제 요소 숨김 */

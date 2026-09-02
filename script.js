@@ -1408,11 +1408,12 @@ window.updateTopCarousel = () => {
     if (!container.dataset.scrollInited) {
         container.dataset.scrollInited = "true";
         container.addEventListener('scroll', () => {
-            if (!STYLE_SETS.length) return;
-            const firstItem = list.children[0];
-            const itemHeight = firstItem ? firstItem.getBoundingClientRect().height : 0;
-            const gap = 12; 
-            const groupHeight = (itemHeight + gap) * STYLE_SETS.length;
+            const items = container.querySelectorAll('.side-style-item');
+            if (!STYLE_SETS.length || items.length <= STYLE_SETS.length) return;
+            
+            // Calculate EXACT group height by distance between item 0 and item N
+            const groupHeight = items[STYLE_SETS.length].offsetTop - items[0].offsetTop;
+            if (groupHeight <= 0) return;
             const middleScroll = groupHeight * Math.floor(copies / 2);
             
             if (container.scrollTop < groupHeight * 3 || container.scrollTop > groupHeight * (copies - 3)) {
@@ -1446,14 +1447,11 @@ window.scrollToSetIndex = (idx) => {
     const container = document.getElementById('side-style-container');
     const items = container ? container.querySelectorAll('.side-style-item') : null;
     if (items && items[idx]) {
-        const normalItem = container.querySelector('.side-style-item:not(.active)') || items[0];
-        const itemHeight = normalItem.getBoundingClientRect().height || 0;
-        const gap = 12;
-        const fullItemHeight = itemHeight + gap;
+        const targetItem = items[idx];
         const computedStyle = window.getComputedStyle(container);
         const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
         
-        const targetScrollTop = paddingTop + idx * fullItemHeight + itemHeight / 2 - container.clientHeight / 2;
+        const targetScrollTop = targetItem.offsetTop + targetItem.offsetHeight / 2 + paddingTop - container.clientHeight / 2;
         container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
     }
 };
@@ -1548,22 +1546,25 @@ function updateActiveSideStyle() {
     const items = container.querySelectorAll('.side-style-item');
     if (!items.length) return;
     
-    const normalItem = container.querySelector('.side-style-item:not(.active)') || items[0];
-    const itemHeight = normalItem.getBoundingClientRect().height || 0;
-    const gap = 12;
-    const fullItemHeight = itemHeight + gap;
-    if (fullItemHeight === 0) return;
-    
     const computedStyle = window.getComputedStyle(container);
     const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+    const targetY = container.scrollTop + container.clientHeight / 2 - paddingTop;
     
-    const centerScrollY = container.scrollTop + container.clientHeight / 2;
-    let closestIndex = Math.round((centerScrollY - paddingTop - itemHeight / 2) / fullItemHeight);
+    let closestItem = null;
+    let minDistance = Infinity;
     
-    if (closestIndex < 0) closestIndex = 0;
-    if (closestIndex >= items.length) closestIndex = items.length - 1;
-    
-    const closestItem = items[closestIndex];
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const itemCenter = item.offsetTop + item.offsetHeight / 2;
+        const distance = Math.abs(targetY - itemCenter);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestItem = item;
+        } else if (distance > minDistance) {
+            break;
+        }
+    }
     if (closestItem) {
         if (!closestItem.classList.contains('active')) {
             container.querySelectorAll('.side-style-item.active').forEach(item => item.classList.remove('active'));

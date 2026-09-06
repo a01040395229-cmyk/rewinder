@@ -519,7 +519,8 @@ async function init() {
         
         renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" }); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0)); // 스탠바이미 렌더링 부하 최소화를 위해 1.0 고정
+        const isLowEndDevice = /webOS|SmartTV|Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+        renderer.setPixelRatio(isLowEndDevice ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0)); // 맥북에서는 고화질(2.0), 스탠바이미에서는 부하 최소화(1.0)
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -546,7 +547,8 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.0));
+        const isLowEndDevice = /webOS|SmartTV|Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
+        renderer.setPixelRatio(isLowEndDevice ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -555,7 +557,9 @@ async function init() {
         cont.addEventListener('dblclick', (e) => {
             // 이미지 더블클릭 시 팝업, 배경 더블클릭 시 전체화면
             if (handleCylinderDblClick(e)) return;
-            toggleFullScreen();
+            if (!isLocked) {
+                toggleFullScreen();
+            }
         });
     }
     window.addEventListener('pointermove', onPointerMove); 
@@ -566,7 +570,9 @@ async function init() {
         if (e.target === document.body || e.target.id === 'canvas-container' || e.target.tagName === 'CANVAS') {
             // 이미지 위에서 더블클릭한 경우 전체화면 전환하지 않음
             if (handleCylinderDblClick(e)) return;
-            toggleFullScreen();
+            if (!isLocked) {
+                toggleFullScreen();
+            }
         }
     });
 
@@ -579,20 +585,7 @@ async function init() {
     if (sideView) sideView.addEventListener('scroll', updateActiveSideStyle);
 }
 
-
-
-// 갤러리 썸네일 그리드 휠 가로 스크롤 전환
 window.addEventListener('wheel', (e) => {
-    const grid = e.target.closest('.thumbnail-grid');
-    if (grid) {
-        if (e.deltaY !== 0) {
-            grid.scrollLeft += e.deltaY;
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-        }
-        return;
-    }
-
     if (e.target.closest('#management-panel, #side-style-wrapper, #instruction-overlay, #info-popup, .controls, #audio-control-btn, .ui-overlay, #management-btn-wrapper')) {
         return;
     }
@@ -615,33 +608,6 @@ window.addEventListener('wheel', (e) => {
     }
 }, { passive: true });
 
-// 갤러리 썸네일 그리드 드래그 스크롤
-let isGridDragging = false;
-let gridStartX = 0;
-let gridScrollLeft = 0;
-let activeGrid = null;
-
-document.addEventListener('mousedown', (e) => {
-    const grid = e.target.closest('.thumbnail-grid');
-    if (grid && !['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'LABEL', 'A'].includes(e.target.tagName)) {
-        isGridDragging = true;
-        activeGrid = grid;
-        gridStartX = e.pageX - grid.offsetLeft;
-        gridScrollLeft = grid.scrollLeft;
-    }
-});
-
-document.addEventListener('mouseup', () => {
-    isGridDragging = false;
-    activeGrid = null;
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (!isGridDragging || !activeGrid) return;
-    const x = e.pageX - activeGrid.offsetLeft;
-    const walk = (x - gridStartX) * 1.5;
-    activeGrid.scrollLeft = gridScrollLeft - walk;
-});
 
 // --------------------------------------------------------------------------
 // 6. IndexedDB 오프라인/로컬 영구 저장소 입출력 (openDB, save, load)
@@ -768,11 +734,14 @@ function animate(time) {
     // 백그라운드 탭 또는 문서 숨김 시 렌더링 연산 일시정지 (스탠바이미 CPU/GPU 리소스 보호)
     if (document.hidden) return;
 
-    // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션
-    if (Math.abs(flattenProgress - targetFlattenProgress) > 0.0001) {
-        flattenProgress += (targetFlattenProgress - flattenProgress) * (1 - Math.pow(1 - 0.08, timeScale));
-    } else if (flattenProgress !== targetFlattenProgress) {
-        flattenProgress = targetFlattenProgress;
+    // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션 (렉 걸리는 느낌 방지를 위해 선형 진행으로 변경)
+    if (flattenProgress !== targetFlattenProgress) {
+        const morphSpeed = 0.04 * timeScale;
+        if (flattenProgress < targetFlattenProgress) {
+            flattenProgress = Math.min(1, flattenProgress + morphSpeed);
+        } else {
+            flattenProgress = Math.max(0, flattenProgress - morphSpeed);
+        }
     }
 
     const t = easeInOutCubic(flattenProgress);
@@ -787,6 +756,7 @@ function animate(time) {
         // CPU 지오메트리 버텍스 위치 동기화 (3D <-> 2D Flat Raycaster 레이캐스팅 정밀도 100% 보장)
         if (c.mesh && c.mesh.geometry && c.mesh.geometry.userData.origPositions) {
             const geo = c.mesh.geometry;
+            // 모핑 전환 중에도 매 프레임 CPU 버텍스를 계산하여 애니메이션 종료 시점의 순간적인 렉(프레임 드랍) 방지 및 부드러운 전환 보장
             if (geo.userData.lastT !== t) {
                 geo.userData.lastT = t;
                 const orig = geo.userData.origPositions;
@@ -895,10 +865,10 @@ window.toggleFlatView = function() {
     if (btn) {
         if (isFlatView) {
             btn.classList.add('active');
-            btn.innerText = 'CYLINDER';
+            btn.innerHTML = '<img src="./asset/cylinder.svg" alt="CYLINDER" style="pointer-events: none;">';
         } else {
             btn.classList.remove('active');
-            btn.innerText = 'FLAT';
+            btn.innerHTML = '<img src="./asset/flat.svg" alt="FLAT" style="pointer-events: none;">';
         }
     }
 };
@@ -1236,18 +1206,23 @@ function onPointerMove(e) {
         document.body.style.cursor = 'default';
         return;
     }
-    const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
-    const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
-    const intersects = r.intersectObjects(getAllInteractableMeshes());
-    
-    if (intersects.length > 0) {
-        isHovering = true; const catId = findCategoryIndexByMesh(intersects[0].object);
-        hoveredCylinderIndex = catId;
-        document.body.style.cursor = 'default';
-    } else { 
-        isHovering = false; 
-        hoveredCylinderIndex = -1;
-        document.body.style.cursor = 'default'; 
+    if (!isDragging) {
+        const now = performance.now();
+        // 최적화: 레이캐스팅 연산 부하 최소화 (100ms 쓰로틀링)
+        if (now - (window.lastRaycastTime || 0) > 100) {
+            window.lastRaycastTime = now;
+            const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
+            const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
+            const intersects = r.intersectObjects(getAllInteractableMeshes());
+            
+            if (intersects.length > 0) {
+                isHovering = true; 
+                hoveredCylinderIndex = findCategoryIndexByMesh(intersects[0].object);
+            } else { 
+                isHovering = false; 
+                hoveredCylinderIndex = -1;
+            }
+        }
     }
     
     if (isDragging && activeCylinderIndex !== -1) { 
@@ -1257,7 +1232,7 @@ function onPointerMove(e) {
         }
 
         if (hasDragged) {
-            const sensitivity = isFlatView ? 0.004 : -0.004;
+            const sensitivity = 0.004;
             const deltaX = e.clientX - dragStartX;
             const deltaRot = deltaX * sensitivity;
 
@@ -1300,6 +1275,10 @@ function onPointerUp(e) {
                 
                 cylinders[catId].targetRotation = Math.round((currentRot - stepDiff * ROTATION_STEP) / ROTATION_STEP) * ROTATION_STEP;
                 if (typeof saveState === 'function') saveState();
+                
+                if (items[uvIdx]) {
+                    showInfoPopup(catId, uvIdx);
+                }
             }
         }
     }
@@ -1338,17 +1317,20 @@ window.switchArchiveTab = (tabName) => {
     const setContent = document.getElementById('tab-content-styleset');
     const catBtn = document.getElementById('tab-btn-category');
     const setBtn = document.getElementById('tab-btn-styleset');
+    const setTopBar = document.getElementById('styleset-top-bar');
     
     if (tabName === 'category') {
         if (catContent) catContent.style.display = 'block';
         if (setContent) setContent.style.display = 'none';
         if (catBtn) catBtn.classList.add('active');
         if (setBtn) setBtn.classList.remove('active');
+        if (setTopBar) setTopBar.style.display = 'none';
     } else {
         if (catContent) catContent.style.display = 'none';
         if (setContent) setContent.style.display = 'block';
         if (catBtn) catBtn.classList.remove('active');
         if (setBtn) setBtn.classList.add('active');
+        if (setTopBar) setTopBar.style.display = 'flex';
     }
 };
 
@@ -1386,6 +1368,7 @@ window.addEventListener('pointerdown', (e) => {
         }
     }
 });
+
 window.updateTopCarousel = () => { 
     const container = document.getElementById('side-style-container');
     const list = document.getElementById('side-style-list');
@@ -1397,181 +1380,42 @@ window.updateTopCarousel = () => {
     }
 
     const baseHTML = STYLE_SETS.map((s, idx) => `
-        <div class="side-style-item" 
+        <div class="side-style-item ${idx === 0 ? 'active' : ''}" 
              data-id="${s.id}" data-idx="${idx}">
             ${s.name}
         </div>`).join(''); 
     
-    const copies = 15;
-    list.innerHTML = baseHTML.repeat(copies);
-    
-    if (!container.dataset.scrollInited) {
-        container.dataset.scrollInited = "true";
-        container.addEventListener('scroll', () => {
-            const items = container.querySelectorAll('.side-style-item');
-            if (!STYLE_SETS.length || items.length <= STYLE_SETS.length) return;
-            
-            // Calculate EXACT group height by distance between item 0 and item N
-            const groupHeight = items[STYLE_SETS.length].offsetTop - items[0].offsetTop;
-            if (groupHeight <= 0) return;
-            const middleScroll = groupHeight * Math.floor(copies / 2);
-            
-            if (container.scrollTop < groupHeight * 3 || container.scrollTop > groupHeight * (copies - 3)) {
-                const currentOffsetInGroup = container.scrollTop % groupHeight;
-                container.scrollTop = middleScroll + currentOffsetInGroup;
+    list.innerHTML = baseHTML;
+
+    // Attach delegated click listener to the list container
+    if (!list.dataset.clickInited) {
+        list.dataset.clickInited = 'true';
+        list.addEventListener('click', (e) => {
+            const item = e.target.closest('.side-style-item');
+            if (item) {
+                const idx = parseInt(item.getAttribute('data-idx'), 10);
+                window.selectSimpleStyle(item, idx);
             }
-            
-            updateActiveSideStyle();
-        }, { passive: true });
-    }
-
-    setTimeout(() => {
-        let activeIdx = STYLE_SETS.findIndex(s => s.id === editingSetId);
-        if (activeIdx === -1) activeIdx = 0;
-        
-        const middleBaseIdx = STYLE_SETS.length * Math.floor(copies / 2);
-        const targetItem = list.children[middleBaseIdx + activeIdx];
-        
-        if (targetItem) {
-            const itemCenter = targetItem.offsetTop + targetItem.offsetHeight / 2;
-            container.scrollTop = itemCenter - container.clientHeight / 2;
-        }
-        
-        updateActiveSideStyle();
-    }, 10);
-
-    initSideWheelDrag();
-};
-
-window.scrollToSetIndex = (idx) => {
-    const container = document.getElementById('side-style-container');
-    const items = container ? container.querySelectorAll('.side-style-item') : null;
-    if (items && items[idx]) {
-        const targetItem = items[idx];
-        const computedStyle = window.getComputedStyle(container);
-        const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-        
-        const targetScrollTop = targetItem.offsetTop + targetItem.offsetHeight / 2 + paddingTop - container.clientHeight / 2;
-        container.scrollTo({ top: targetScrollTop, behavior: 'smooth' });
+        });
     }
 };
 
-window.centerSideStyleItem = (item) => {
-    const container = document.getElementById('side-style-container');
-    if (!container || !item) return;
-    const items = container.querySelectorAll('.side-style-item');
-    const idx = Array.from(items).indexOf(item);
-    if (idx !== -1) {
-        window.scrollToSetIndex(idx);
+window.selectSimpleStyle = (element, idx) => {
+    const list = document.getElementById('side-style-list');
+    if (!list) return;
+    
+    // Remove active class from all items
+    list.querySelectorAll('.side-style-item.active').forEach(item => item.classList.remove('active'));
+    
+    // Add active class to clicked item
+    if (element) {
+        element.classList.add('active');
+        const setId = parseInt(element.getAttribute('data-id'), 10);
+        if (!isNaN(setId) && window.applyStyleSet) {
+            window.applyStyleSet(setId);
+        }
     }
 };
-
-let isSideWheelDragging = false;
-let sideWheelStartY = 0;
-let sideWheelStartScrollTop = 0;
-let isSideWheelDragMoved = false;
-
-function initSideWheelDrag() {
-    const container = document.getElementById('side-style-container');
-    if (!container || container.dataset.dragInited) return;
-    container.dataset.dragInited = "true";
-
-    // Use capture phase to prevent click on dragged items
-    container.addEventListener('click', (e) => {
-        if (isSideWheelDragMoved) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-        const item = e.target.closest('.side-style-item');
-        if (item) {
-            const setId = parseInt(item.getAttribute('data-id'), 10);
-            if (!isNaN(setId)) {
-                window.applyStyleSet(setId);
-                if (window.centerSideStyleItem) {
-                    window.centerSideStyleItem(item);
-                } else {
-                    item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-            }
-        }
-    }, true);
-
-    container.addEventListener('pointerdown', (e) => {
-        isSideWheelDragging = true;
-        isSideWheelDragMoved = false;
-        sideWheelStartY = e.clientY;
-        sideWheelStartScrollTop = container.scrollTop;
-        container.style.cursor = 'grabbing';
-        // Disable scroll snap while dragging for smooth movement
-        container.style.scrollSnapType = 'none';
-    });
-
-    window.addEventListener('pointermove', (e) => {
-        if (!isSideWheelDragging) return;
-        const deltaY = e.clientY - sideWheelStartY;
-        if (Math.abs(deltaY) > 5) {
-            isSideWheelDragMoved = true;
-        }
-        container.scrollTop = sideWheelStartScrollTop - deltaY;
-    });
-
-    const endDrag = (e) => {
-        if (!isSideWheelDragging) return;
-        isSideWheelDragging = false;
-        container.style.cursor = 'grab';
-        
-        // Re-enable scroll snap
-        container.style.scrollSnapType = 'y mandatory';
-
-        if (isSideWheelDragMoved) {
-            updateActiveSideStyle();
-            const activeItem = container.querySelector('.side-style-item.active');
-            if (activeItem) {
-                const setId = parseInt(activeItem.getAttribute('data-id'), 10);
-                if (!isNaN(setId)) {
-                    window.applyStyleSet(setId);
-                }
-            }
-        }
-    };
-
-    window.addEventListener('pointerup', endDrag);
-    window.addEventListener('pointercancel', endDrag);
-}
-
-
-function updateActiveSideStyle() {
-    const container = document.getElementById('side-style-container');
-    const items = container.querySelectorAll('.side-style-item');
-    if (!items.length) return;
-    
-    const computedStyle = window.getComputedStyle(container);
-    const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
-    const targetY = container.scrollTop + container.clientHeight / 2 - paddingTop;
-    
-    let closestItem = null;
-    let minDistance = Infinity;
-    
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const itemCenter = item.offsetTop + item.offsetHeight / 2;
-        const distance = Math.abs(targetY - itemCenter);
-        
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestItem = item;
-        } else if (distance > minDistance) {
-            break;
-        }
-    }
-    if (closestItem) {
-        if (!closestItem.classList.contains('active')) {
-            container.querySelectorAll('.side-style-item.active').forEach(item => item.classList.remove('active'));
-            closestItem.classList.add('active');
-        }
-    }
-}
 
 // --------------------------------------------------------------------------
 // 13. 이미지 압축 및 업로드 처리 (resizeImage & handleFileUpload)
@@ -1607,7 +1451,7 @@ window.handleFileUpload = async (e, id) => {
             const rawUrl = await new Promise(res => { const rd = new FileReader(); rd.onload = ev => res(ev.target.result); rd.readAsDataURL(f); });
             return await resizeImage(rawUrl, 480);
         }));
-        CATEGORIES[catIdx].items = [...urls.map(u => ({url:u, setIds:[]})), ...CATEGORIES[catIdx].items].slice(0, ITEM_COUNT);
+        CATEGORIES[catIdx].items = [...CATEGORIES[catIdx].items, ...urls.map(u => ({url:u, setIds:[]}))].slice(0, ITEM_COUNT);
         await updateCylinderTexture(catIdx); saveState(); createUI(); showMessage("최적화 업로드 완료! (100장 준비 완료) ✨");
     } catch (err) { console.error(err); showMessage("업로드 실패: 용량을 확인해 주세요."); }
 };
@@ -1651,7 +1495,7 @@ window.moveImageOrder = async (catId, idx, dir) => {
     items[idx] = items[targetIdx];
     items[targetIdx] = temp;
 
-    await updateCylinderTexture(catId);
+    await updateCylinderTexture(catIdx);
     saveState();
     createUI();
 
@@ -1798,10 +1642,26 @@ window.handleSetDrop = (e, targetIdx) => {
     saveState(); createUI(); showMessage("세트 순서 변경 완료! ✨");
 };
 
+window.moveStyleSet = (e, idx, dir) => {
+    e.stopPropagation();
+    const targetIdx = idx + dir;
+    if (targetIdx < 0 || targetIdx >= STYLE_SETS.length) return;
+    const [moved] = STYLE_SETS.splice(idx, 1);
+    STYLE_SETS.splice(targetIdx, 0, moved);
+    saveState(); createUI(); showMessage("세트 순서 변경 완료! ✨");
+};
+
 // --------------------------------------------------------------------------
 // 16. 관리 패널 HTML 동적 생성 함수 (createUI)
 // --------------------------------------------------------------------------
 function createUI() {
+    const scrollPositions = [];
+    document.querySelectorAll('.thumbnail-grid').forEach((el, i) => {
+        scrollPositions[i] = el.scrollLeft;
+    });
+    const panelScrollContent = document.querySelector('#tab-content-category');
+    const panelScrollTop = panelScrollContent ? panelScrollContent.scrollTop : 0;
+
     document.getElementById('category-controls').innerHTML = CATEGORIES.map(cat => {
         const curRot = (window.cylinders && window.cylinders[cat.id]) ? (window.cylinders[cat.id].targetRotation || 0) : 0;
         const activeIndex = ((Math.round(-curRot / ROTATION_STEP) % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT;
@@ -1831,12 +1691,19 @@ function createUI() {
                     <div class="thumb" onclick="showInfoPopup(${cat.id}, ${i})"><img src="${item.url}"></div>
                     <div class="delete-btn" onclick="deleteImage(${cat.id}, ${i})" title="삭제">×</div>
                     <div class="item-inputs-stack">
-                        <select class="set-assigner ${item.setIds && item.setIds.length > 0 ? 'has-set' : ''}" onchange="assignSetForItem(${cat.id}, ${i}, this.value)" title="세트 지정">
-                            <option value="">NO SET</option>
-                            ${STYLE_SETS.map(s => `
-                                <option value="${s.id}" ${item.setIds?.includes(s.id) ? 'selected' : ''}>${s.name}</option>
-                            `).join('')}
-                        </select>
+                        <div class="set-assigner-wrapper">
+                            <div class="set-assigner-btn ${item.setIds && item.setIds.length > 0 ? 'has-set' : ''}" title="세트 지정" onclick="toggleDropdown(${cat.id}, ${i}, event)">
+                                ${item.setIds && item.setIds.length > 0 ? item.setIds.map(id => STYLE_SETS.find(s=>s.id===id)?.name).filter(Boolean).join(', ') : 'NO SET'}
+                            </div>
+                            <div class="set-assigner-menu ${window.openDropdownId && window.openDropdownId.cat === cat.id && window.openDropdownId.idx === i ? 'show' : ''}" onclick="event.stopPropagation()">
+                                ${STYLE_SETS.map(s => `
+                                    <label>
+                                        <input type="checkbox" onchange="assignSetForItem(${cat.id}, ${i}, '${s.id}')" ${item.setIds?.includes(s.id) ? 'checked' : ''}>
+                                        ${s.name}
+                                    </label>
+                                `).join('')}
+                            </div>
+                        </div>
                         <input type="text" class="item-title" onchange="updateItemTitle(${cat.id}, ${i}, this.value)" placeholder="NAME" value="${item.title || ''}">
                         <input type="text" class="item-memo" onchange="updateItemMemo(${cat.id}, ${i}, this.value)" placeholder="DESC" value="${item.desc || ''}">
                         <input type="text" class="item-link-input" onchange="updateItemLink(${cat.id}, ${i}, this.value)" placeholder="URL" value="${item.link || ''}">
@@ -1846,7 +1713,6 @@ function createUI() {
                         <span class="order-idx">${i + 1}</span>
                         <button class="order-btn" onclick="event.stopPropagation(); moveImageOrder(${cat.id}, ${i}, 1)" title="오른쪽으로 이동" ${i === cat.items.length - 1 ? 'disabled style="opacity:0.2;cursor:default;"' : ''}>▶</button>
                     </div>
-                    <div class="item-active-indicator ${isActive ? '' : 'invisible'}"></div>
                 </div>`;
             }).join('')}</div>
         </div>`;
@@ -1872,7 +1738,7 @@ function createUI() {
             <div class="flex flex-col justify-between self-stretch py-1 gap-2 flex-1 min-w-0">
                 <div>
                     <input type="text" value="${s.name}" onchange="renameStyleSet(${s.id}, this.value)" class="set-name-edit" placeholder="STYLE NAME">
-                    <div class="text-[10px] font-bold mt-1 ${s.repUrl ? 'text-indigo-600' : 'text-slate-400'}">
+                    <div class="text-[10px] font-bold mt-1 ${s.repUrl ? 'text-slate-800' : 'text-slate-400'}">
                         ${s.repUrl ? '● 이미지 등록됨' : '○ 이미지 없음'}
                     </div>
                 </div>
@@ -1889,6 +1755,11 @@ function createUI() {
             </div>
         </div>`).join('');
     updateTopCarousel();
+    
+    document.querySelectorAll('.thumbnail-grid').forEach((el, i) => {
+        if (scrollPositions[i] !== undefined) el.scrollLeft = scrollPositions[i];
+    });
+    if (panelScrollContent) panelScrollContent.scrollTop = panelScrollTop;
 }
 
 // 5개 원통을 특정 스타일 세트 아이템에 맞춰 동시 정렬하는 기능
@@ -1932,31 +1803,85 @@ window.applyStyleSet = (id, element) => {
         showSetReference();
     }
 };
+window.openDropdownId = null;
+document.addEventListener('click', () => {
+    if (window.openDropdownId) {
+        window.openDropdownId = null;
+        document.querySelectorAll('.set-assigner-menu').forEach(menu => menu.classList.remove('show'));
+    }
+});
+window.toggleDropdown = (catId, idx, e) => {
+    e.stopPropagation();
+    const isSame = window.openDropdownId && window.openDropdownId.cat === catId && window.openDropdownId.idx === idx;
+    window.openDropdownId = isSame ? null : { cat: catId, idx: idx };
+    
+    document.querySelectorAll('.set-assigner-menu').forEach(menu => menu.classList.remove('show'));
+    
+    if (window.openDropdownId) {
+        const catSection = document.querySelectorAll('.category-section')[catId];
+        if (catSection) {
+            const wrappers = catSection.querySelectorAll('.set-assigner-wrapper');
+            if (wrappers[idx]) {
+                const menu = wrappers[idx].querySelector('.set-assigner-menu');
+                if (menu) menu.classList.add('show');
+            }
+        }
+    }
+};
 window.addStyleSet = () => { const id = STYLE_SETS.length > 0 ? Math.max(...STYLE_SETS.map(s => s.id)) + 1 : 1; STYLE_SETS.push({ id, name: "NAME" }); saveState(); createUI(); };
 window.assignSetForItem = (catId, idx, setIdStr) => {
     const item = CATEGORIES[catId].items[idx];
     if (!item.setIds) item.setIds = [];
     
-    if (!setIdStr) {
+    if (!setIdStr || setIdStr === 'clear') {
         item.setIds = [];
-    } else {
+    } else if (setIdStr !== 'default') {
         const setId = parseInt(setIdStr, 10);
-        CATEGORIES[catId].items.forEach(it => {
-            if (it.setIds) {
-                it.setIds = it.setIds.filter(id => id !== setId);
-            }
-        });
-        item.setIds = [setId];
+        if (item.setIds.includes(setId)) {
+            item.setIds = item.setIds.filter(id => id !== setId);
+        } else {
+            CATEGORIES[catId].items.forEach(it => {
+                if (it.setIds) {
+                    it.setIds = it.setIds.filter(id => id !== setId);
+                }
+            });
+            item.setIds.push(setId);
+        }
     }
     if (typeof saveState === 'function') saveState(); 
-    createUI();
+    
+    const catSection = document.querySelectorAll('.category-section')[catId];
+    if (catSection) {
+        const wrappers = catSection.querySelectorAll('.set-assigner-wrapper');
+        CATEGORIES[catId].items.forEach((it, i) => {
+            const wrapper = wrappers[i];
+            if (!wrapper) return;
+            const btn = wrapper.querySelector('.set-assigner-btn');
+            const menu = wrapper.querySelector('.set-assigner-menu');
+            
+            if (it.setIds && it.setIds.length > 0) {
+                btn.classList.add('has-set');
+                btn.innerText = it.setIds.map(id => STYLE_SETS.find(s=>s.id===id)?.name).filter(Boolean).join(', ');
+            } else {
+                btn.classList.remove('has-set');
+                btn.innerText = 'NO SET';
+            }
+            
+            const checkboxes = menu.querySelectorAll('input[type="checkbox"]');
+            STYLE_SETS.forEach((s, sIdx) => {
+                if (checkboxes[sIdx]) {
+                    checkboxes[sIdx].checked = it.setIds && it.setIds.includes(s.id);
+                }
+            });
+        });
+    }
 };
 window.renameStyleSet = (id, n) => { const s = STYLE_SETS.find(x => x.id === id); if(s) { s.name = n.toUpperCase(); saveState(); createUI(); } };
 window.saveCurrentToSet = (id) => { cylinders.forEach((cyl, catIdx) => { const raw = Math.round(-cyl.targetRotation / ROTATION_STEP); const fIdx = ((raw % ITEM_COUNT) + ITEM_COUNT) % ITEM_COUNT; CATEGORIES[catIdx].items.forEach(it => { if (it && it.setIds) it.setIds = it.setIds.filter(setId => setId !== id); }); const it = CATEGORIES[catIdx].items[fIdx]; if(it) { if(!it.setIds) it.setIds = []; it.setIds.push(id); } }); editingSetId = id; saveState(); createUI(); showMessage("현재 착장이 스타일 세트에 저장되었습니다! ✨"); };
 
 // 전 데이터 및 이미지를 단일 HTML 파일로 번들링하여 다운로드
 window.saveToShareableFile = async () => {
-    showMessage("Fashion Rewinder 전시용 파일 생성 중... (이미지 번들링)");
+    showMessage("Fashion Rewinder 전시용 파일 생성 중...");
     try {
         const imageUrlToDataURL = (url) => {
             if (!url) return Promise.resolve(url);
@@ -2197,10 +2122,10 @@ function updateAudioUI(playing) {
     const btn = document.getElementById('audio-control-btn');
     const icon = document.getElementById('volume-icon');
     if (playing && !isMuted) {
-        if (icon) icon.src = 'sound icon 1.png';
+        if (icon) icon.src = 'asset/sound icon 1.png';
         if (btn) btn.classList.add('playing');
     } else {
-        if (icon) icon.src = 'sound icon 2.png';
+        if (icon) icon.src = 'asset/sound icon 2.png';
         if (btn) btn.classList.remove('playing');
     }
 }
@@ -2332,5 +2257,27 @@ function toggleFullScreen() {
         else if (document.msExitFullscreen) docEl.msExitFullscreen();
     }
 }
+
+// digital clock
+function updateDigitalClock() {
+    const clockEl = document.getElementById('digital-clock');
+    const dateEl = document.getElementById('digital-date');
+    if (!clockEl && !dateEl) return;
+    
+    const now = new Date();
+    
+
+    
+    if (dateEl) {
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        const dayName = dayNames[now.getDay()];
+        dateEl.textContent = `${year} ${month} ${day} ${dayName}`;
+    }
+}
+setInterval(updateDigitalClock, 1000);
+updateDigitalClock();
 
 

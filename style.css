@@ -1212,11 +1212,10 @@ h3 {
 }
 
 .info-card {
-    height: 80vh;
-    max-height: 900px;
-    width: calc(80vh * (508 / 808)); /* Fallback for browsers without aspect-ratio */
-    max-width: min(90vw, 565.8px); /* 900px * 508 / 808 = 565.84px */
-    aspect-ratio: 508 / 808;
+    width: 500px;
+    height: 800px;
+    max-width: 90vw;
+    max-height: 90vh;
     background: #ffffff;
     border: none;
     border-radius: 10px;
@@ -1229,26 +1228,6 @@ h3 {
     pointer-events: auto;
     animation: popUp 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     box-sizing: border-box;
-}
-
-@supports (aspect-ratio: 1) {
-    .info-card {
-        width: auto;
-        max-width: 90vw;
-    }
-}
-
-.cylinder-popup .info-card {
-    width: 80vh; /* Fallback for browsers without aspect-ratio */
-    max-width: min(90vw, 900px);
-    aspect-ratio: 1;
-}
-
-@supports (aspect-ratio: 1) {
-    .cylinder-popup .info-card {
-        width: auto;
-        max-width: 90vw;
-    }
 }
 
 .info-header {

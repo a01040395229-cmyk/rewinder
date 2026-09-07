@@ -1388,16 +1388,13 @@ window.updateTopCarousel = () => {
     list.innerHTML = baseHTML;
 
     // Attach delegated click listener to the list container
-    if (!list.dataset.clickInited) {
-        list.dataset.clickInited = 'true';
-        list.addEventListener('click', (e) => {
-            const item = e.target.closest('.side-style-item');
-            if (item) {
-                const idx = parseInt(item.getAttribute('data-idx'), 10);
-                window.selectSimpleStyle(item, idx);
-            }
-        });
-    }
+    list.onclick = (e) => {
+        const item = e.target.closest('.side-style-item');
+        if (item) {
+            const idx = parseInt(item.getAttribute('data-idx'), 10);
+            window.selectSimpleStyle(item, idx);
+        }
+    };
 };
 
 window.selectSimpleStyle = (element, idx) => {
@@ -1936,7 +1933,9 @@ window.saveToShareableFile = async () => {
         if (catContainer) catContainer.innerHTML = '';
         if (setListContainer) setListContainer.innerHTML = '';
         if (canvasContainer) canvasContainer.innerHTML = '';
-        if (sideStyleList) sideStyleList.innerHTML = '';
+        if (sideStyleList) {
+            sideStyleList.innerHTML = '';
+        }
         if (sideStyleContainer) {
             sideStyleContainer.removeAttribute('data-scroll-inited');
             sideStyleContainer.removeAttribute('data-drag-inited');
@@ -1947,7 +1946,9 @@ window.saveToShareableFile = async () => {
         if (catContainer) catContainer.innerHTML = backupCat;
         if (setListContainer) setListContainer.innerHTML = backupSetList;
         if (canvasContainer) canvasContainer.innerHTML = backupCanvas;
-        if (sideStyleList) sideStyleList.innerHTML = backupSideList;
+        if (sideStyleList) {
+            sideStyleList.innerHTML = backupSideList;
+        }
         if (sideStyleContainer) {
             if (scrollInited) sideStyleContainer.dataset.scrollInited = scrollInited;
             if (dragInited) sideStyleContainer.dataset.dragInited = dragInited;

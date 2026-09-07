@@ -1212,17 +1212,15 @@ h3 {
 }
 
 .info-card {
-    width: 500px;
-    height: 800px;
+    height: min(800px, 85vh);
+    width: calc(min(800px, 85vh) * (500 / 800));
     max-width: 90vw;
-    max-height: 90vh;
     background: #ffffff;
     border: none;
     border-radius: 10px;
     overflow: hidden;
     box-shadow: none;
     position: relative;
-    top: -30px;
     display: flex;
     flex-direction: column;
     pointer-events: auto;

@@ -1580,7 +1580,7 @@ window.showSetReference = () => {
     if (!set || !set.repUrl) { showMessage("이 스타일의 대표 이미지가 등록되지 않았습니다."); return; }
     
     document.getElementById('info-img').src = set.repUrl;
-    document.getElementById('info-category').innerText = "STYLE CONCEPT";
+    document.getElementById('info-category').innerText = "STYLE";
     document.getElementById('info-title').innerText = set.name;
     document.getElementById('info-desc').innerText = "이 스타일 조합에 대한 오피셜 룩북 이미지입니다.";
     const linkBtn = document.getElementById('info-link');

@@ -772,6 +772,25 @@ h3 {
     z-index: 150;
 }
 
+.controls button, .controls a {
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+}
+
+.controls button:focus, .controls button:active,
+.controls a:focus, .controls a:active {
+    outline: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
 .btn {
     background: white;
     padding: 14px 18px;
@@ -831,7 +850,11 @@ h3 {
 .btn-black:hover {
 }
 
-#flat-view-btn.active,
+#flat-view-btn, #mode-2d-btn {
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
 #mode-2d-btn.active {
     background: #64748b !important;
     color: #ffffff !important;
@@ -1324,7 +1347,7 @@ h3 {
     font-size: 14px;
     font-weight: 900;
     color: #ffffff;
-    margin: 0;
+    margin: 0 0 0 -10px;
     letter-spacing: 0.05em;
 }
 

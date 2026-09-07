@@ -1238,6 +1238,19 @@ h3 {
     }
 }
 
+.cylinder-popup .info-card {
+    width: 80vh; /* Fallback for browsers without aspect-ratio */
+    max-width: min(90vw, 900px);
+    aspect-ratio: 1;
+}
+
+@supports (aspect-ratio: 1) {
+    .cylinder-popup .info-card {
+        width: auto;
+        max-width: 90vw;
+    }
+}
+
 .info-header {
     flex: 0 0 auto;
     display: flex;

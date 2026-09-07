@@ -1591,6 +1591,8 @@ window.showSetReference = () => {
     if (buyOverlay) buyOverlay.style.display = 'none';
     
     const popup = document.getElementById('info-popup');
+    popup.classList.add('style-popup');
+    popup.classList.remove('cylinder-popup');
     if (popup.style.display === 'flex' || popup.style.display === 'block') {
         popup.style.display = 'none';
         void popup.offsetWidth;
@@ -1614,6 +1616,8 @@ window.showSetThumbnailPreview = (setId) => {
     if (buyOverlay) buyOverlay.style.display = 'none';
     
     const popup = document.getElementById('info-popup');
+    popup.classList.add('style-popup');
+    popup.classList.remove('cylinder-popup');
     if (popup.style.display === 'flex' || popup.style.display === 'block') {
         popup.style.display = 'none';
         void popup.offsetWidth;
@@ -2047,7 +2051,10 @@ window.showInfoPopup = (catId, idx) => {
         buyOverlay.style.display = 'none';
     }
     
-    document.getElementById('info-popup').style.display = 'flex'; 
+    const popup = document.getElementById('info-popup');
+    popup.classList.add('cylinder-popup');
+    popup.classList.remove('style-popup');
+    popup.style.display = 'flex'; 
 };
 window.closeInfoPopup = () => {
     document.getElementById('info-popup').style.display = 'none';

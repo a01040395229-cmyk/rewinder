@@ -30,6 +30,15 @@ window.addEventListener('error', function(e) {
 // --------------------------------------------------------------------------
 let scene, camera, renderer, cylinders = [];
 
+// 스탠바이미(WebOS) 및 스마트TV/모바일 저사양 기기 환경 감지
+const isStanbyMeOrLowEnd = (() => {
+    const ua = navigator.userAgent || '';
+    const isTV = /webOS|web0s|SmartTV|LG|NetCast|TV|Tizen/i.test(ua);
+    const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
+    const isTouchOnly = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+    return isTV || isMobile || (isTouchOnly && window.innerWidth <= 1920);
+})();
+
 // 마우스/터치 드래그 및 회전 관련 상태
 let isDragging = false, hasDragged = false, dragStartX = 0, dragStartRotation = 0, dragStartRotations = [], activeCylinderIndex = -1;
 let isHovering = false; 
@@ -517,10 +526,14 @@ async function init() {
         camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000); 
         camera.position.set(0, 0, 3); // 카메라 기본 거리 설정
         
-        renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: "high-performance" }); 
+        renderer = new THREE.WebGLRenderer({ 
+            antialias: false, 
+            alpha: true, 
+            powerPreference: "high-performance",
+            precision: isStanbyMeOrLowEnd ? "mediump" : "highp"
+        }); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        const isLowEndDevice = /webOS|SmartTV|Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
-        renderer.setPixelRatio(isLowEndDevice ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0)); // 맥북에서는 고화질(2.0), 스탠바이미에서는 부하 최소화(1.0)
+        renderer.setPixelRatio(isStanbyMeOrLowEnd ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0)); // 맥북에서는 고화질(2.0), 스탠바이미에서는 부하 최소화(1.0)
         const canvasContainer = document.getElementById('canvas-container');
         if (canvasContainer) {
             canvasContainer.innerHTML = '';
@@ -547,8 +560,7 @@ async function init() {
         camera.aspect = window.innerWidth / window.innerHeight; 
         camera.updateProjectionMatrix(); 
         renderer.setSize(window.innerWidth, window.innerHeight); 
-        const isLowEndDevice = /webOS|SmartTV|Mobile|Android|iPhone|iPad/i.test(navigator.userAgent);
-        renderer.setPixelRatio(isLowEndDevice ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0));
+        renderer.setPixelRatio(isStanbyMeOrLowEnd ? 1.0 : Math.min(window.devicePixelRatio || 1, 2.0));
     });
     
     const cont = document.getElementById('canvas-container');
@@ -717,6 +729,34 @@ function easeInOutCubic(x) {
 
 
 
+// CPU 지오메트리 버텍스 위치 동기화 (Raycaster 정밀도를 위해 모핑 완료 시점 또는 인터랙션 시점에만 1회 호출)
+function syncGeometryVertices(c, t, sinT) {
+    if (!c || !c.mesh || !c.mesh.geometry || !c.mesh.geometry.userData.origPositions) return;
+    const geo = c.mesh.geometry;
+    if (geo.userData.lastSyncedT === t) return;
+    geo.userData.lastSyncedT = t;
+
+    if (sinT === undefined) sinT = Math.sin(t * Math.PI);
+    const orig = geo.userData.origPositions;
+    const flat = geo.userData.flatPositions;
+    const posAttr = geo.attributes.position;
+    const count = posAttr.count;
+    for (let i = 0; i < count; i++) {
+        const u = geo.attributes.uv.getX(i);
+        const theta = (u - 0.5) * Math.PI * 2;
+        const archFactor = sinT * Math.cos(theta * 0.5) * 0.08;
+
+        const px = orig[i * 3] * (1 - t) + flat[i * 3] * t;
+        const py = orig[i * 3 + 1] * (1 - t) + flat[i * 3 + 1] * t;
+        const pz = orig[i * 3 + 2] * (1 - t) + (flat[i * 3 + 2] + archFactor) * t;
+
+        posAttr.setXYZ(i, px, py, pz);
+    }
+    posAttr.needsUpdate = true;
+    geo.computeBoundingSphere();
+    geo.computeBoundingBox();
+}
+
 // --------------------------------------------------------------------------
 // 8. 3D/2D 메인 렌더링 프레임 루프 (animate)
 // --------------------------------------------------------------------------
@@ -734,7 +774,15 @@ function animate(time) {
     // 백그라운드 탭 또는 문서 숨김 시 렌더링 연산 일시정지 (스탠바이미 CPU/GPU 리소스 보호)
     if (document.hidden) return;
 
-    // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션 (렉 걸리는 느낌 방지를 위해 선형 진행으로 변경)
+    const isInfoPopupOpen = document.getElementById('info-popup') && document.getElementById('info-popup').style.display === 'flex';
+    const isPanelOpen = document.getElementById('management-panel') && document.getElementById('management-panel').style.display !== 'none';
+    
+    // 팝업 또는 관리 모달 패널 오픈 시 백그라운드 WebGL 렌더링 쓰로틀링 (GPU 부하 절감 & 팝업 조작 반응성 극대화)
+    if ((isInfoPopupOpen || isPanelOpen) && (window.__frameSkip = ((window.__frameSkip || 0) + 1) % 3) !== 0) {
+        return;
+    }
+
+    // 3D 입체 원통 <-> 2D 펼침 모프 보정 애니메이션
     if (flattenProgress !== targetFlattenProgress) {
         const morphSpeed = 0.04 * timeScale;
         if (flattenProgress < targetFlattenProgress) {
@@ -746,6 +794,7 @@ function animate(time) {
 
     const t = easeInOutCubic(flattenProgress);
     const sinT = Math.sin(t * Math.PI);
+    const isMorphing = flattenProgress !== targetFlattenProgress;
 
     cylinders.forEach((c) => { 
         if (c.mesh && c.mesh.material && c.mesh.material.userData && c.mesh.material.userData.shader) {
@@ -753,31 +802,9 @@ function animate(time) {
             c.mesh.material.userData.shader.uniforms.uSinT.value = sinT;
         }
 
-        // CPU 지오메트리 버텍스 위치 동기화 (3D <-> 2D Flat Raycaster 레이캐스팅 정밀도 100% 보장)
-        if (c.mesh && c.mesh.geometry && c.mesh.geometry.userData.origPositions) {
-            const geo = c.mesh.geometry;
-            // 모핑 전환 중에도 매 프레임 CPU 버텍스를 계산하여 애니메이션 종료 시점의 순간적인 렉(프레임 드랍) 방지 및 부드러운 전환 보장
-            if (geo.userData.lastT !== t) {
-                geo.userData.lastT = t;
-                const orig = geo.userData.origPositions;
-                const flat = geo.userData.flatPositions;
-                const posAttr = geo.attributes.position;
-                const count = posAttr.count;
-                for (let i = 0; i < count; i++) {
-                    const u = geo.attributes.uv.getX(i);
-                    const theta = (u - 0.5) * Math.PI * 2;
-                    const archFactor = sinT * Math.cos(theta * 0.5) * 0.08;
-
-                    const px = orig[i * 3] * (1 - t) + flat[i * 3] * t;
-                    const py = orig[i * 3 + 1] * (1 - t) + flat[i * 3 + 1] * t;
-                    const pz = orig[i * 3 + 2] * (1 - t) + (flat[i * 3 + 2] + archFactor) * t;
-
-                    posAttr.setXYZ(i, px, py, pz);
-                }
-                posAttr.needsUpdate = true;
-                geo.computeBoundingSphere();
-                geo.computeBoundingBox();
-            }
+        // 스탠바이미 최적화: 전환 도중 매 프레임 CPU 버텍스 계산 및 GPU VBO 재업로드를 제거하고 전환 완료 시에만 1회 동기화
+        if (!isMorphing) {
+            syncGeometryVertices(c, t, sinT);
         }
     });
 
@@ -794,8 +821,7 @@ function animate(time) {
         pauseAutoDuration -= dt;
     }
 
-    const isInfoPopupOpen = document.getElementById('info-popup') && document.getElementById('info-popup').style.display === 'flex';
-    const canAutoRotate = !isDragging && !isHovering && pauseAutoDuration <= 0 && !isInfoPopupOpen;
+    const canAutoRotate = !isDragging && !isHovering && pauseAutoDuration <= 0 && !isInfoPopupOpen && !isPanelOpen;
 
     const L = Math.PI * 2 * CYLINDER_RADIUS;
 
@@ -835,11 +861,18 @@ function animate(time) {
 
         c.mesh.rotation.y = (- (ROTATION_STEP / 2)) * (1 - t);
 
+        // 스탠바이미 최적화: 3D 모드일 때는 불필요한 클론 연산 및 순회 스킵
         if (c.clones) {
-            c.clones.forEach(clone => {
-                clone.rotation.y = c.mesh.rotation.y;
-                clone.visible = t > 0.01;
-            });
+            if (t > 0.01) {
+                c.clones.forEach(clone => {
+                    clone.rotation.y = c.mesh.rotation.y;
+                    if (!clone.visible) clone.visible = true;
+                });
+            } else if (c.clones[0] && c.clones[0].visible) {
+                c.clones.forEach(clone => {
+                    clone.visible = false;
+                });
+            }
         }
     }); 
     renderer.render(scene, camera); 
@@ -984,9 +1017,9 @@ async function createCylinderMesh(index) {
     mesh.frustumCulled = false;
     group.add(mesh);
 
-    // 2D 무한 스크롤 연출을 위한 좌우 복제 클론 패널 (스탠바이미 최적화: 4개 클론으로 씬 메시 44% 절감)
+    // 2D 무한 스크롤 연출을 위한 좌우 복제 클론 패널 (스탠바이미: 좌우 1개씩 총 2개로 드로우콜 50% 절감, PC: 4개)
     const clones = [];
-    const offsets = [-2, -1, 1, 2];
+    const offsets = isStanbyMeOrLowEnd ? [-1, 1] : [-2, -1, 1, 2];
     offsets.forEach(mult => {
         const clone = new THREE.Mesh(geo, mat);
         clone.rotation.y = - (ROTATION_STEP / 2);
@@ -1068,8 +1101,9 @@ async function updateCylinderTexture(index) {
     else if (index === 3) hVal = 22.0;
     else if (index === 4) hVal = 7.0;
     const hRatio = hVal / 16; 
-    // 1080p 화면 전용 1:1 픽셀 매핑 최적 해상도 향상 (4096px) - 과도한 부하 없이 선명도 개선
-    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(4096, renderer.capabilities.maxTextureSize) : 4096;
+    // 스탠바이미/저사양 기기는 2048px로 최적화하여 텍스처 VRAM 및 대역폭 75% 절감 (PC는 4096px 고화질)
+    const targetTexSize = isStanbyMeOrLowEnd ? 2048 : 4096;
+    const maxTextureCap = (renderer && renderer.capabilities) ? Math.min(targetTexSize, renderer.capabilities.maxTextureSize) : targetTexSize;
     const MAX_WIDTH = maxTextureCap; 
     const categoryItems = CATEGORIES[index].items;
     
@@ -1078,7 +1112,7 @@ async function updateCylinderTexture(index) {
     canvas.height = Math.round((MAX_WIDTH / ITEM_COUNT) * hRatio);
     const ctx = canvas.getContext('2d', { alpha: true }); 
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = isStanbyMeOrLowEnd ? 'medium' : 'high';
     
     // 배경은 투명하게 비워 각 칸 사이의 간격을 띄움
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1124,7 +1158,7 @@ async function updateCylinderTexture(index) {
                 const scale = Math.max(cardW / img.width, cardH / img.height);
                 const dW = img.width * scale, dH = img.height * scale;
                 ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
+                ctx.imageSmoothingQuality = isStanbyMeOrLowEnd ? 'medium' : 'high';
                 ctx.drawImage(img, cardX + (cardW - dW)/2, cardY + (cardH - dH)/2, dW, dH); 
                 
                 ctx.restore();
@@ -1135,10 +1169,10 @@ async function updateCylinderTexture(index) {
     
     const tex = new THREE.CanvasTexture(canvas); 
     const maxAnisotropy = (renderer && renderer.capabilities) ? renderer.capabilities.getMaxAnisotropy() : 4;
-    tex.anisotropy = Math.min(4, maxAnisotropy);
-    // 양 옆 화질 저하(비등방성) 문제 해결을 위해 Mipmap 활성화 (성능을 고려해 anisotropy는 4로 유지)
-    tex.generateMipmaps = true;
-    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.anisotropy = isStanbyMeOrLowEnd ? 1 : Math.min(4, maxAnisotropy);
+    // 스탠바이미 환경에서는 Mipmap 생성을 건너뛰어 베이킹 시 수백ms 프리징 및 VRAM 낭비 차단
+    tex.generateMipmaps = !isStanbyMeOrLowEnd;
+    tex.minFilter = isStanbyMeOrLowEnd ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter;
     tex.magFilter = THREE.LinearFilter;
     
     tex.wrapS = THREE.RepeatWrapping;
@@ -1184,8 +1218,12 @@ function onPointerDown(e) {
 
 function getAllInteractableMeshes() {
     const list = [];
+    const t = easeInOutCubic(flattenProgress);
     cylinders.forEach(c => {
-        if (c.mesh) list.push(c.mesh);
+        if (c.mesh) {
+            syncGeometryVertices(c, t);
+            list.push(c.mesh);
+        }
         if (c.clones) {
             c.clones.forEach(clone => {
                 if (clone.visible) list.push(clone);
@@ -1206,10 +1244,11 @@ function onPointerMove(e) {
         document.body.style.cursor = 'default';
         return;
     }
-    if (!isDragging) {
+    // 스탠바이미 등 터치스크린/호버 미지원 환경에서는 불필요한 마우스 호버 Raycaster 연산 차단
+    if (!isDragging && !isStanbyMeOrLowEnd) {
         const now = performance.now();
-        // 최적화: 레이캐스팅 연산 부하 최소화 (100ms 쓰로틀링)
-        if (now - (window.lastRaycastTime || 0) > 100) {
+        // 최적화: 레이캐스팅 연산 부하 최소화 (120ms 쓰로틀링)
+        if (now - (window.lastRaycastTime || 0) > 120) {
             window.lastRaycastTime = now;
             const m = new THREE.Vector2((e.clientX/innerWidth)*2-1, -(e.clientY/innerHeight)*2+1);
             const r = new THREE.Raycaster(); r.setFromCamera(m, camera);
@@ -1424,6 +1463,8 @@ async function resizeImage(dataUrl, maxW = 1280, quality = 0.85) {
             const scale = Math.min(1, maxW / Math.max(img.width, img.height));
             canvas.width = img.width * scale; canvas.height = img.height * scale;
             const ctx = canvas.getContext('2d'); 
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             res(canvas.toDataURL('image/jpeg', quality));

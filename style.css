@@ -976,7 +976,7 @@ h3 {
 
 .set-thumb-preview.has-img {
     cursor: pointer;
-    background: #000000;
+    background: #ffffff;
 }
 
 .set-thumb-preview.has-img:hover {
@@ -1249,6 +1249,7 @@ h3 {
     align-items: center;
     justify-content: center;
     padding: 0;
+    margin-right: -2%;
 }
 
 .close-info:hover {
@@ -1298,6 +1299,7 @@ h3 {
     overflow: hidden;
     text-decoration: none;
     border-bottom: 1px solid #000;
+    background-color: #fff;
 }
 
 .buy-overlay {
@@ -1344,7 +1346,7 @@ h3 {
     font-size: 14px;
     font-weight: 900;
     color: #ffffff;
-    margin: 0 0 0 -10px;
+    margin-left: -2%;
     letter-spacing: 0.05em;
 }
 
